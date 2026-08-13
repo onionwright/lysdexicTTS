@@ -115,7 +115,12 @@ class ReaderApp(QObject):
         self.tray.show()
 
         self._ready = False
+        # Two distinct states that were previously conflated. `_reading` means
+        # "audio is actively playing"; `_has_document` means "something is
+        # loaded and can be played". Transport must be gated on the latter,
+        # otherwise finishing or stopping a read leaves the panel inert.
         self._reading = False
+        self._has_document = False
         self._pending_text: str | None = None
         self._candidate = None
 
@@ -290,6 +295,7 @@ class ReaderApp(QObject):
         )
         if self.cfg.get("ui", "show_panel_on_read"):
             self.panel.show_floating()
+        self._has_document = n > 0
         self._reading = True
         self.tray.set_reading(True)
         self.tray.set_state("reading", f"{APP_NAME} — reading {n} sentences")
@@ -297,13 +303,14 @@ class ReaderApp(QObject):
         if self.cfg.get("app", "stop_hotkey_enabled"):
             self.hotkey.register(str(self.cfg.get("app", "stop_hotkey")))
 
-    def _finish_reading(self, status: str) -> None:
+    def _end_playback(self) -> None:
+        """Playback stopped or ran out. The document stays loaded and fully
+        replayable -- only the 'audio is running' state is cleared."""
         self._reading = False
         self.hotkey.unregister()
         self.tray.set_reading(False)
         self.tray.set_state("ready", f"{APP_NAME} — ready")
         self.panel.set_playing(False)
-        self.panel.set_status(status)
 
     # ------------------------------------------------------- select-to-read
 
@@ -354,21 +361,38 @@ class ReaderApp(QObject):
         self.panel.show_floating()
 
     def _on_play_pause(self) -> None:
-        if self._reading:
-            self.ctl.toggle()
+        if not self._has_document:
+            return
+        # play() restarts from the top when the document has finished, so this
+        # works as a replay button too.
+        if self.ctl.toggle():
+            self._on_playback_started()
 
     def _on_stop(self) -> None:
         self.ctl.stop()
-        self._finish_reading("stopped")
+        self._end_playback()
 
     def _on_panic_stop(self) -> None:
         log.info("panic stop hotkey pressed")
         self._on_stop()
 
     def _on_sentence_clicked(self, index: int) -> None:
+        if not self._has_document:
+            return
+        self.ctl.jump_to_sentence(index)
+        self.ctl.play()
+        self._on_playback_started()
+
+    def _on_playback_started(self) -> None:
         if self._reading:
-            self.ctl.jump_to_sentence(index)
-            self.ctl.play()
+            return
+        self._reading = True
+        self.tray.set_reading(True)
+        self.tray.set_state(
+            "reading", f"{APP_NAME} — reading {self.ctl.total_sentences} sentences"
+        )
+        if self.cfg.get("app", "stop_hotkey_enabled"):
+            self.hotkey.register(str(self.cfg.get("app", "stop_hotkey")))
 
     def _on_autostart_toggled(self, enabled: bool) -> None:
         ok = autostart.sync(enabled)
@@ -415,7 +439,9 @@ class ReaderApp(QObject):
     # ---------------------------------------------------------------- tick
 
     def _tick(self) -> None:
-        if not self._reading:
+        # Gated on having a document, not on playing: after a read finishes or
+        # is stopped, the panel must still track next/back and show state.
+        if not self._has_document:
             return
         state = self.ctl.tick()
         if state.sentence_changed:
@@ -423,16 +449,19 @@ class ReaderApp(QObject):
         self.panel.set_playing(state.playing)
 
         total = state.total_sentences
-        shown = min(state.sentence_index + 1, total)
-        status = f"{shown} / {total}"
-        if state.starved:
-            status += "  ·  buffering"
-        elif not state.playing and not state.finished:
-            status += "  ·  paused"
+        if state.finished:
+            status = f"finished — {total} sentences  ·  press play to replay"
+        else:
+            shown = min(state.sentence_index + 1, total)
+            status = f"{shown} / {total}"
+            if state.starved:
+                status += "  ·  buffering"
+            elif not state.playing:
+                status += "  ·  paused"
         self.panel.set_status(status)
 
-        if state.finished:
-            self._finish_reading(f"finished — {total} sentences")
+        if state.finished and self._reading:
+            self._end_playback()
 
     def _reassert_topmost(self) -> None:
         if self.panel.isVisible():

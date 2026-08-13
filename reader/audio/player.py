@@ -120,9 +120,22 @@ class StreamPlayer:
     # ------------------------------------------------------------- transport
 
     def play(self) -> None:
+        """Start or resume. At the end of the playlist, this replays from the
+        top -- pressing play on a finished document must not be a no-op."""
         self._ensure_stream()
-        if self._paused:
+        if self.finished or self.cur_index >= self._n:
+            self._pending = "restart"
+        elif self._paused:
             self._pending = "resume"
+
+    def ensure_ready(self) -> None:
+        """Open the device if it isn't already.
+
+        Transport actions are applied by the audio callback, so a jump issued
+        while the stream is closed would sit in ``_pending`` forever and the UI
+        would look stuck.
+        """
+        self._ensure_stream()
 
     def pause(self) -> None:
         if not self._paused:
@@ -253,6 +266,12 @@ class StreamPlayer:
         elif action == "resume":
             self._paused = False
             self.finished = False
+        elif action == "restart":
+            self.cur_index = 0
+            self.pos = 0
+            self.finished = False
+            self._paused = False
+            self.boundary_seq += 1
         elif action == "stop":
             self._paused = True
             self.cur_index = 0

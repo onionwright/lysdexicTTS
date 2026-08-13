@@ -124,12 +124,21 @@ class SynthScheduler:
         self._enqueue(gen, 0)
         return gen
 
-    def cancel(self) -> None:
-        """Invalidate everything in flight. Audio is stopped by the caller."""
+    def cancel(self, *, keep_session: bool = True) -> None:
+        """Invalidate everything in flight. Audio is stopped by the caller.
+
+        The session (the sentence list) is kept by default so the document can
+        still be replayed or resumed afterwards. Dropping it would leave
+        ``ensure_ahead`` with nothing to schedule, so anything not already
+        synthesized when the user pressed Stop could never be rendered -- the
+        reader would play its buffered audio and then stall silently forever.
+        Pass ``keep_session=False`` when genuinely abandoning the document.
+        """
         with self._state_lock:
             self._gen += 1
-            self._sentences = []
             self._queued.clear()
+            if not keep_session:
+                self._sentences = []
         self._drain()
 
     @property

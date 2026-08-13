@@ -134,11 +134,28 @@ class ReaderController:
         self.scheduler.begin_session(self._units, self.voice, self.speed)
         return len(self._sentences)
 
+    @property
+    def has_document(self) -> bool:
+        """True while something is loaded and can be played, whether or not it
+        is currently playing. Transport should be driven by this, not by
+        whether audio happens to be running."""
+        return bool(self._units)
+
     def stop(self) -> None:
-        """Silence immediately and abandon pending synthesis."""
+        """Silence immediately and rewind, keeping the document replayable."""
         self.player.stop()
-        self.scheduler.cancel()
+        self.scheduler.cancel(keep_session=True)
         self._autoplay = False
+        self._last_sentence = -1
+
+    def clear(self) -> None:
+        """Abandon the document entirely."""
+        self.player.stop()
+        self.scheduler.cancel(keep_session=False)
+        self._autoplay = False
+        self._sentences = []
+        self._units = []
+        self._firsts = []
 
     # ---------------------------------------------------------- transport
 
@@ -176,6 +193,9 @@ class ReaderController:
     def jump_to_sentence(self, sentence_index: int) -> None:
         if not self._units:
             return
+        # Jumps are applied by the audio callback, so the device has to be open
+        # or the request would never be consumed.
+        self.player.ensure_ready()
         if sentence_index >= len(self._sentences):
             self.player.jump_to(len(self._units))  # past the end == finished
         else:

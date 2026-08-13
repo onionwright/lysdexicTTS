@@ -135,6 +135,60 @@ def test_end_of_playlist_sets_finished():
     assert p.callback_error is None
 
 
+def test_play_after_finishing_replays_from_the_beginning():
+    """Pressing play on a finished document must not be a no-op.
+
+    Regression: play() only set 'resume', which cleared the pause flag while
+    cur_index was still past the last sentence, so the callback immediately
+    re-finished and nothing ever played again.
+    """
+    # Chunks longer than one callback block, so a single pull cannot itself
+    # cross a sentence boundary and muddy the assertion.
+    p = make_player(lens=(3000, 3000, 3000))
+    for _ in range(12):
+        pull(p)
+    assert p.finished
+
+    p._ensure_stream = lambda: None  # don't open a real device in tests
+    p.play()
+    b = pull(p)
+
+    assert p.cur_index == 0, "should be back at the first sentence"
+    assert not p.finished
+    assert p.is_playing
+    assert abs(b[300] - 1.0) < 0.05, "audio must actually resume"
+
+
+def test_play_midway_resumes_and_does_not_rewind():
+    """The replay behaviour must not turn an ordinary un-pause into a restart."""
+    p = make_player(lens=(SR, SR, SR))
+    pull(p)
+    p.pause()
+    pull(p)
+    frozen = p.pos
+    assert frozen > 0
+
+    p._ensure_stream = lambda: None
+    p.play()
+    pull(p)
+
+    assert p.cur_index == 0
+    assert p.pos > frozen, "resumed from where it paused, not from the start"
+
+
+def test_jump_after_finishing_clears_finished():
+    """Using next/back to pick a restart point has to revive the player."""
+    p = make_player(lens=(3000, 3000, 3000))
+    for _ in range(12):
+        pull(p)
+    assert p.finished
+
+    p.jump_to(1)
+    pull(p)
+    assert p.cur_index == 1
+    assert not p.finished
+
+
 def test_callback_never_raises():
     """An exception escaping the callback would abort the whole stream."""
     p = make_player()
