@@ -15,8 +15,6 @@ the audio callback free of signals and locks.
 from __future__ import annotations
 
 import logging
-import os
-import subprocess
 import sys
 import threading
 import warnings
@@ -38,8 +36,9 @@ from .tts.kokoro_engine import KokoroEngine
 from .ui.icons import app_icon
 from .ui.pill import SelectionPill
 from .ui.reader_panel import ReaderPanel
+from .ui.settings_dialog import SettingsDialog
 from .ui.tray import Tray
-from .win import autostart, dpi, singleton
+from .win import autostart, dpi, shell, singleton
 from .win import capture as capmod
 from .win import window as winwin
 from .win.hotkey import StopHotkey
@@ -123,6 +122,7 @@ class ReaderApp(QObject):
         self._has_document = False
         self._pending_text: str | None = None
         self._candidate = None
+        self._settings_dialog: SettingsDialog | None = None
 
         self.watcher = self._make_watcher()
 
@@ -177,6 +177,7 @@ class ReaderApp(QObject):
         self.tray.stop_reading.connect(self._on_stop)
         self.tray.quit_requested.connect(self.quit)
         self.tray.open_settings.connect(self._on_open_settings)
+        self.tray.open_settings_folder.connect(self._on_open_settings_folder)
         self.tray.reload_settings.connect(self._on_reload_settings)
         self.tray.autostart_toggled.connect(self._on_autostart_toggled)
         self.tray.watcher_toggled.connect(self._on_watcher_toggled)
@@ -412,13 +413,21 @@ class ReaderApp(QObject):
             self.pill.hide()
 
     def _on_open_settings(self) -> None:
-        path = paths.settings_file()
-        if not path.exists():
-            configmod.save(self.cfg)
-        try:
-            os.startfile(str(path))  # noqa: S606 - opening the user's own config
-        except Exception:
-            subprocess.Popen(["notepad.exe", str(path)])
+        """Edit settings in-app.
+
+        Deliberately not handed to an external editor: .toml has no registered
+        handler on a default Windows install, and Windows 11's tabbed Notepad
+        swallows the file when launched from a background process. See
+        reader/ui/settings_dialog.py.
+        """
+        if self._settings_dialog is None:
+            self._settings_dialog = SettingsDialog()
+            self._settings_dialog.saved.connect(self._on_reload_settings)
+        self._settings_dialog.show_focused()
+
+    def _on_open_settings_folder(self) -> None:
+        paths.ensure_dirs()
+        shell.reveal_in_explorer(paths.config_dir())
 
     def _on_reload_settings(self) -> None:
         self.cfg = configmod.load()

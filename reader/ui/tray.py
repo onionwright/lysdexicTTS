@@ -30,6 +30,7 @@ class Tray(QSystemTrayIcon):
     stop_reading = Signal()
     quit_requested = Signal()
     open_settings = Signal()
+    open_settings_folder = Signal()
     reload_settings = Signal()
     autostart_toggled = Signal(bool)
     watcher_toggled = Signal(bool)
@@ -73,6 +74,10 @@ class Tray(QSystemTrayIcon):
         act_reload = QAction("Reload settings", menu)
         act_reload.triggered.connect(self.reload_settings)
         menu.addAction(act_reload)
+
+        act_folder = QAction("Open settings folder", menu)
+        act_folder.triggered.connect(self.open_settings_folder)
+        menu.addAction(act_folder)
 
         menu.addSeparator()
         act_quit = QAction("Quit", menu)

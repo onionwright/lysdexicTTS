@@ -100,8 +100,12 @@ Turn on **Start with Windows** from the tray menu once you're happy with it.
 | Panic stop | `Ctrl+Alt+Esc`, registered only while audio is playing |
 | Tray | Read clipboard, show panel, edit settings, autostart, quit |
 
-Settings are hand-editable TOML at
-`%APPDATA%\KokoroReader\settings.toml` (tray → *Edit settings…*), logs at
+Settings are TOML, edited in-app via tray → *Edit settings…*, which validates
+the file before saving so a typo can't stop the app from starting. The file
+itself lives at `%APPDATA%\KokoroReader\settings.toml` if you prefer your own
+editor (tray → *Open settings folder*) — note that `.toml` has no file
+association on a default Windows install, which is why the editor is built in
+rather than shelling out. Logs are at
 `%LOCALAPPDATA%\KokoroReader\logs\`. Those storage paths, the single-instance
 mutex and the autostart registry value deliberately keep the original
 `KokoroReader` name so an existing install keeps its settings and can't leave a
@@ -264,7 +268,6 @@ feels instant.
 - [x] **Phase 4** — TOML settings, autostart, single instance, logging,
       per-monitor DPI, device-loss recovery, panic hotkey
 
-Not built yet: a graphical settings dialog (settings are hand-edited TOML with
-tray shortcuts), voice download management UI, and word-level highlighting —
-the per-word timings are already computed and kept on every chunk, so that last
-one is mostly UI work.
+Not built yet: voice download management, and word-level highlighting — the
+per-word timings are already computed and kept on every chunk, so that last one
+is mostly UI work.
