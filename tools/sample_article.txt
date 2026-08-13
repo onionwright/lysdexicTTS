@@ -1,0 +1,71 @@
+Why Reading Aloud Is Harder Than It Looks
+
+Text-to-speech systems have improved dramatically, but the gap between "can
+produce a sentence" and "can read a document" remains surprisingly wide. Dr.
+Elena Vasquez, who has studied speech synthesis for over 14 years, puts the
+number of distinct failure modes at roughly 3.5 dozen. Most of them have
+nothing to do with the acoustic model at all.
+
+Consider the humble sentence boundary. A naive splitter breaks on every period,
+which mangles "Dr. Smith", "vs. the alternative", "3.14 dollars", and every
+URL ever written, e.g. https://example.com/a.b.c/index.html. A splitter that is
+too conservative does the opposite: it swallows an entire bulleted list into
+one enormous run-on utterance, because bullet items carry no terminal
+punctuation whatsoever.
+
+The Latency Problem
+
+The second problem is patience. If a system synthesizes an entire document
+before playing the first word, a reader waiting on a long article will sit in
+silence for the better part of a minute. The fix is conceptually simple and
+structurally invasive: render the first sentence, start playing it, and render
+the rest during playback. This turns a batch program into a pipeline, and
+pipelines need buffering policy, cancellation semantics, and a scheduler.
+
+There are three constraints worth naming explicitly:
+
+- The audio callback must never block, allocate, or take a lock, because it
+  runs on a real-time thread owned by the sound subsystem.
+- Inference cannot be interrupted partway through, so cancellation has to be
+  expressed in terms of what the listener hears, not what the processor is
+  doing.
+- Buffering has to be bounded, or a forty-page selection will happily consume
+  several gigabytes of memory before anyone notices.
+
+Silence, Gaps, and Clicks
+
+A subtler issue is padding. Many neural vocoders emit a small amount of
+leading and trailing silence around each utterance. Individually this is
+inaudible. Concatenated across two hundred sentences, it becomes almost a full
+second of dead air between every pair, and the result sounds less like a
+narrator and more like a hostage video.
+
+Trimming that padding is straightforward once you meas-
+ure it, and it pays a second dividend: removing the leading silence also
+removes it from the very first sentence, which is pure latency reduction at no
+cost.
+
+Clicks are the opposite problem. They appear whenever audio is cut mid-
+waveform, which happens every time a listener presses pause, stop, skip, or
+back. A short raised-cosine fade of five to ten milliseconds eliminates them
+entirely and is imperceptible as a fade.
+
+What Good Controls Feel Like
+
+Finally, there is the question of what the listener can actually do. Four
+controls cover almost every real need:
+
+1. Play and pause, which must be instant and must not restart anything.
+2. Stop, which should silence immediately even if work is still in flight.
+3. Next sentence, for skipping a passage that turned out to be uninteresting.
+4. Previous sentence, which should restart the current sentence if you are
+   already well into it, and only step backwards if you are not.
+
+That last rule is worth dwelling on. It is the behavior every music player
+uses, and it is correct for the same reason: when someone reaches for "back",
+they usually mean "say that again", not "go somewhere else". Getting this
+single detail right does more for the feel of a reader than almost any
+improvement to the voice itself.
+
+None of this is glamorous. All of it is the difference between a demo and
+something a person will actually use every day.

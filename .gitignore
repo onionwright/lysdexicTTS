@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Audio output / scratch
+*.wav
+*.mp3
+*.flac
+out/
+scratch/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# Local settings (real config lives in %APPDATA%\KokoroReader)
+settings.local.toml

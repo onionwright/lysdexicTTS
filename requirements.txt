@@ -1,0 +1,33 @@
+# Direct dependencies for Kokoro Reader.
+# Exact resolved versions of the whole tree live in requirements-lock.txt
+# (regenerate with: venv\Scripts\python.exe -m pip freeze > requirements-lock.txt)
+
+# --- TTS engine ---
+kokoro==0.9.4              # PyTorch Kokoro-82M pipeline
+misaki==0.9.4              # G2P (pulled in by kokoro, pinned here deliberately)
+torch==2.13.0              # CPU build on this machine; no CUDA available
+numpy==2.5.2
+
+# --- Sentence splitting ---
+spacy==3.8.15
+# plus the model, which pip freeze does NOT capture as a normal requirement:
+#   python -m spacy download en_core_web_sm     (3.8.0)
+
+# --- Audio ---
+sounddevice==0.5.5         # PortAudio/WASAPI streaming output
+
+# --- GUI ---
+PySide6-Essentials>=6.7    # LGPL; frameless no-activate windows + queued signals
+
+# --- Windows integration ---
+comtypes>=1.4              # UI Automation via UIAutomationCore.dll
+
+# --- Config ---
+tomli-w==1.2.0             # writing TOML; reading uses stdlib tomllib (3.11+)
+
+# --- Development ---
+pytest>=8                  # venv\Scripts\python.exe -m pytest tests -q
+
+# --- Legacy / reference only ---
+# gradio==6.24.0           # original spike UI (app.py); not needed by reader/
+# soundfile==0.14.0        # used by speak.py and future save-to-WAV
