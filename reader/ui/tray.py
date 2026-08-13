@@ -67,17 +67,13 @@ class Tray(QSystemTrayIcon):
         self.act_autostart.toggled.connect(self.autostart_toggled)
         menu.addAction(self.act_autostart)
 
-        act_settings = QAction("Edit settings...", menu)
+        act_settings = QAction("Settings…", menu)
         act_settings.triggered.connect(self.open_settings)
         menu.addAction(act_settings)
 
-        act_reload = QAction("Reload settings", menu)
+        act_reload = QAction("Reload settings from file", menu)
         act_reload.triggered.connect(self.reload_settings)
         menu.addAction(act_reload)
-
-        act_folder = QAction("Open settings folder", menu)
-        act_folder.triggered.connect(self.open_settings_folder)
-        menu.addAction(act_folder)
 
         menu.addSeparator()
         act_quit = QAction("Quit", menu)

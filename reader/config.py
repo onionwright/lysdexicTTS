@@ -85,6 +85,13 @@ DEFAULTS: Dict[str, Any] = {
         "max_sentences": 2000,
         "panel_geometry": "",
         "show_panel_on_read": True,
+        # Text presentation in the reader panel. Larger text and looser line
+        # spacing are among the few things with real evidence behind them for
+        # dyslexic readers, so they are first-class settings rather than a
+        # theme detail.
+        "panel_font_pt": 13,
+        "panel_line_spacing": 1.5,
+        "panel_font_family": "",  # empty = system default sans-serif
     },
     "app": {
         "autostart": False,

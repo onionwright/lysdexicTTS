@@ -37,6 +37,7 @@ from .ui.icons import app_icon
 from .ui.pill import SelectionPill
 from .ui.reader_panel import ReaderPanel
 from .ui.settings_dialog import SettingsDialog
+from .ui.settings_window import SettingsWindow
 from .ui.tray import Tray
 from .win import autostart, dpi, shell, singleton
 from .win import capture as capmod
@@ -123,6 +124,7 @@ class ReaderApp(QObject):
         self._pending_text: str | None = None
         self._candidate = None
         self._settings_dialog: SettingsDialog | None = None
+        self._settings_window: SettingsWindow | None = None
 
         self.watcher = self._make_watcher()
 
@@ -132,9 +134,7 @@ class ReaderApp(QObject):
         self._wire()
         self._register_own_windows()
 
-        self.tray.set_autostart_checked(autostart.is_enabled())
-        autostart.sync(bool(self.cfg.get("app", "autostart")))
-        self.tray.set_autostart_checked(autostart.is_enabled())
+        self._apply_settings()
 
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS)
@@ -178,7 +178,7 @@ class ReaderApp(QObject):
         self.tray.quit_requested.connect(self.quit)
         self.tray.open_settings.connect(self._on_open_settings)
         self.tray.open_settings_folder.connect(self._on_open_settings_folder)
-        self.tray.reload_settings.connect(self._on_reload_settings)
+        self.tray.reload_settings.connect(self._on_manual_reload)
         self.tray.autostart_toggled.connect(self._on_autostart_toggled)
         self.tray.watcher_toggled.connect(self._on_watcher_toggled)
 
@@ -413,32 +413,89 @@ class ReaderApp(QObject):
             self.pill.hide()
 
     def _on_open_settings(self) -> None:
-        """Edit settings in-app.
+        """Open the visual settings window.
 
-        Deliberately not handed to an external editor: .toml has no registered
-        handler on a default Windows install, and Windows 11's tabbed Notepad
-        swallows the file when launched from a background process. See
-        reader/ui/settings_dialog.py.
+        Settings are edited in-app rather than handed to an external editor:
+        .toml has no registered handler on a default Windows install, and
+        Windows 11's tabbed Notepad swallows the file when launched from a
+        background process.
         """
+        if self._settings_window is None:
+            self._settings_window = SettingsWindow(engine=self.engine)
+            self._settings_window.applied.connect(self._on_reload_settings)
+            self._settings_window.open_raw_editor.connect(self._on_open_raw_settings)
+        self._settings_window.show_focused()
+
+    def _on_open_raw_settings(self) -> None:
+        """The plain-text TOML editor, reached from Advanced."""
         if self._settings_dialog is None:
             self._settings_dialog = SettingsDialog()
-            self._settings_dialog.saved.connect(self._on_reload_settings)
+            self._settings_dialog.saved.connect(self._on_raw_settings_saved)
         self._settings_dialog.show_focused()
+
+    def _on_raw_settings_saved(self) -> None:
+        self._on_reload_settings()
+        if self._settings_window is not None:
+            # Keep the visual controls in step with a hand edit.
+            self._settings_window.show_focused()
 
     def _on_open_settings_folder(self) -> None:
         paths.ensure_dirs()
         shell.reveal_in_explorer(paths.config_dir())
 
-    def _on_reload_settings(self) -> None:
-        self.cfg = configmod.load()
-        self.ctl.player.volume = float(self.cfg.get("audio", "volume"))
-        self.ctl.voice = self.cfg.get("engine", "voice")
-        self.ctl.speed = float(self.cfg.get("engine", "speed"))
+    def _apply_settings(self) -> None:
+        """Push the current config onto the live objects.
+
+        Everything reachable from the settings window takes effect here without
+        a restart; only the audio device and thread count need one.
+        """
+        cfg = self.cfg
+        self.ctl.player.volume = float(cfg.get("audio", "volume"))
+        self.ctl.voice = cfg.get("engine", "voice")
+        self.ctl.speed = float(cfg.get("engine", "speed"))
+        self.engine.voice = cfg.get("engine", "voice")
+        self.engine.speed = float(cfg.get("engine", "speed"))
         self.ctl.prev_restart_threshold_s = float(
-            self.cfg.get("playback", "prev_restart_threshold_s")
+            cfg.get("playback", "prev_restart_threshold_s")
         )
-        self.watcher.set_mode(self.cfg.get("selection", "mode"))
-        self.pill.auto_hide_ms = int(self.cfg.get("selection", "pill_auto_hide_ms"))
+        self.ctl.scheduler.lookahead_sentences = int(
+            cfg.get("playback", "lookahead_sentences")
+        )
+        self.splitter.trailing_pause_s = float(cfg.get("audio", "trailing_pause_s"))
+        self.splitter.paragraph_pause_s = float(cfg.get("audio", "paragraph_pause_s"))
+        self.splitter.max_sentences = int(cfg.get("ui", "max_sentences"))
+
+        self.panel.set_typography(
+            int(cfg.get("ui", "panel_font_pt")),
+            float(cfg.get("ui", "panel_line_spacing")),
+            str(cfg.get("ui", "panel_font_family") or ""),
+        )
+
+        self.pill.auto_hide_ms = int(cfg.get("selection", "pill_auto_hide_ms"))
+        self.watcher.set_mode(cfg.get("selection", "mode"))
+        self.watcher.enable_double_click = bool(
+            cfg.get("selection", "enable_double_click")
+        )
+        self.watcher.enable_triple_click = bool(
+            cfg.get("selection", "enable_triple_click")
+        )
+        watch_on = cfg.get("selection", "mode") != "off"
+        self.tray.set_watcher_checked(watch_on)
+
+        autostart.sync(bool(cfg.get("app", "autostart")))
+        self.tray.set_autostart_checked(autostart.is_enabled())
+
+        if not cfg.get("app", "stop_hotkey_enabled"):
+            self.hotkey.unregister()
+
+    def _on_reload_settings(self) -> None:
+        """Re-read from disk and apply. Silent: the settings window saves on
+        every change and showing a toast each time would be noise."""
+        self.cfg = configmod.load()
+        self._apply_settings()
+
+    def _on_manual_reload(self) -> None:
+        self._on_reload_settings()
         self.tray.showMessage(
             APP_NAME, "Settings reloaded.",
             QSystemTrayIcon.MessageIcon.Information, 1500,

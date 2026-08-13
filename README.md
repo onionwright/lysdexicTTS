@@ -11,6 +11,11 @@ highlighted, and transport controls stay visible the whole time.
 
 No copying into a separate window. No right-click menu to hunt for.
 
+Built for dyslexic readers, which shapes the whole interface: adjustable text
+size and line spacing in the reading window, a sentence highlight that tracks
+the voice so you never lose your place, and settings written as plain sentences
+with ordinary controls rather than configuration syntax.
+
 ---
 
 ## What it does, and does not do, with your input
@@ -100,12 +105,22 @@ Turn on **Start with Windows** from the tray menu once you're happy with it.
 | Panic stop | `Ctrl+Alt+Esc`, registered only while audio is playing |
 | Tray | Read clipboard, show panel, edit settings, autostart, quit |
 
-Settings are TOML, edited in-app via tray → *Edit settings…*, which validates
-the file before saving so a typo can't stop the app from starting. The file
-itself lives at `%APPDATA%\KokoroReader\settings.toml` if you prefer your own
-editor (tray → *Open settings folder*) — note that `.toml` has no file
-association on a default Windows install, which is why the editor is built in
-rather than shelling out. Logs are at
+Settings live under tray → *Settings…* — a plain visual window with real
+controls, grouped as Voice, Reading, Selecting text, Text size, Starting up and
+Advanced. Every option has a short plain-language description; nothing requires
+reading configuration syntax. Changes apply and save as you make them.
+
+**Text size and line spacing are first-class settings**, not theme details.
+Generous type and loose line spacing are among the few interventions with real
+evidence behind them for dyslexic readers, so they get their own page with a
+live preview.
+
+Under *Advanced* there's still a raw TOML editor for anyone who prefers it, and
+it validates before saving so a typo can't stop the app from starting. The file
+lives at `%APPDATA%\KokoroReader\settings.toml`. It is edited in-app rather than
+shelled out to an external editor because `.toml` has no file association on a
+default Windows install, and Windows 11's tabbed Notepad silently swallows files
+opened from a background process. Logs are at
 `%LOCALAPPDATA%\KokoroReader\logs\`. Those storage paths, the single-instance
 mutex and the autostart registry value deliberately keep the original
 `KokoroReader` name so an existing install keeps its settings and can't leave a

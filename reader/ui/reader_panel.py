@@ -19,7 +19,14 @@ import logging
 from typing import List, Optional, Sequence
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QTextCursor, QTextCharFormat
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QPainter,
+    QTextBlockFormat,
+    QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -69,6 +76,9 @@ class ReaderPanel(QWidget):
         # Built once per document; rebuilding it on every sentence boundary
         # would mean thousands of cursor objects per read.
         self._wash: List[QTextEdit.ExtraSelection] = []
+        self._font_pt = 13
+        self._line_spacing = 1.5
+        self._font_family = ""
 
         self._build()
 
@@ -152,11 +162,43 @@ class ReaderPanel(QWidget):
 
     # ------------------------------------------------------------- content
 
+    def set_typography(
+        self, font_pt: int, line_spacing: float, family: str = ""
+    ) -> None:
+        """Set reading text size and line spacing.
+
+        Both are accessibility settings rather than cosmetics: generous size and
+        line spacing measurably help dyslexic readers track a line of text.
+        """
+        self._font_pt = max(8, int(font_pt))
+        self._line_spacing = max(1.0, float(line_spacing))
+        self._font_family = family or ""
+
+        font = QFont(self._font_family) if self._font_family else QFont()
+        if not self._font_family:
+            font.setStyleHint(QFont.StyleHint.SansSerif)
+        font.setPointSize(self._font_pt)
+        self.text.setFont(font)
+        self._apply_line_spacing()
+
+    def _apply_line_spacing(self) -> None:
+        cursor = QTextCursor(self.text.document())
+        cursor.select(QTextCursor.SelectionType.Document)
+        block = QTextBlockFormat()
+        block.setLineHeight(
+            int(self._line_spacing * 100),
+            QTextBlockFormat.LineHeightTypes.ProportionalHeight.value,
+        )
+        cursor.mergeBlockFormat(block)
+
     def set_document(self, raw_text: str, sentences: Sequence[Sentence]) -> None:
         """Show the captured text and prepare highlighting."""
         self._sentences = list(sentences)
         self._current = -1
         self.text.setPlainText(raw_text)
+        # Block formatting is per-document, so it has to be reapplied whenever
+        # the text is replaced.
+        self._apply_line_spacing()
         self.text.verticalScrollBar().setValue(0)
         self._build_wash()
         self._apply_highlight(-1)
