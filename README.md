@@ -64,9 +64,30 @@ is never installed in that mode.
 
 ---
 
+## Install
+
+You need **Python 3.11–3.13** first (`torch` has no wheel past 3.13). Get it from
+[python.org](https://www.python.org/downloads/) and tick *Add python.exe to PATH*.
+Then double-click **`Install.cmd`**.
+
+It builds the virtual environment, installs the dependencies, downloads the
+model, and asks two yes/no questions: whether to add a Start menu entry, and
+whether to start with Windows. Nothing needs administrator rights, and nothing
+is installed outside your user profile.
+
+Budget about ten minutes and 1.5 GB of downloads, most of it `torch`.
+
+Two things that go wrong on a locked-down machine: if `huggingface.co` is
+blocked the model download fails and the app retries it on first run, and
+antivirus may object to the mouse hook — see the section above for why, and
+expect to need a Defender exclusion for the folder.
+
+To uninstall, delete the folder, the Start menu entry, and the `KokoroReader`
+value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+
 ## Quick start
 
-Double-click **`LysdexicTTS.cmd`**, or:
+Press **Start** and type *lysdexic*, double-click **`LysdexicTTS.cmd`**, or:
 
 ```bash
 venv\Scripts\pythonw.exe run_reader.pyw
@@ -92,7 +113,8 @@ Run the tests:
 venv\Scripts\python.exe -m pytest tests -q
 ```
 
-Turn on **Start with Windows** from the tray menu once you're happy with it.
+**Start with Windows** is offered during install, and stays in the tray menu if
+you'd rather decide later.
 
 ### Using it
 
