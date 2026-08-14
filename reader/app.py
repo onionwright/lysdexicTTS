@@ -460,10 +460,15 @@ class ReaderApp(QObject):
         """
         cfg = self.cfg
         self.ctl.player.volume = float(cfg.get("audio", "volume"))
-        self.ctl.voice = cfg.get("engine", "voice")
-        self.ctl.speed = float(cfg.get("engine", "speed"))
-        self.engine.voice = cfg.get("engine", "voice")
-        self.engine.speed = float(cfg.get("engine", "speed"))
+
+        # Re-renders the loaded document if the voice or speed actually
+        # changed, so the choice takes effect on what is on screen right now.
+        voice = str(cfg.get("engine", "voice"))
+        speed = float(cfg.get("engine", "speed"))
+        self.engine.voice = voice
+        self.engine.speed = speed
+        if self.ctl.set_voice_and_speed(voice, speed) and self._has_document:
+            self.panel.set_status("changing voice…")
         self.ctl.prev_restart_threshold_s = float(
             cfg.get("playback", "prev_restart_threshold_s")
         )

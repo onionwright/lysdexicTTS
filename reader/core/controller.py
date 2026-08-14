@@ -141,6 +141,43 @@ class ReaderController:
         whether audio happens to be running."""
         return bool(self._units)
 
+    def set_voice_and_speed(self, voice: str, speed: float) -> bool:
+        """Change voice or speed, re-rendering the loaded document in place.
+
+        Returns True if anything changed. Audio already rendered belongs to the
+        old voice, so a loaded document has to be re-synthesized from wherever
+        the reader currently is -- otherwise choosing a new voice appears to do
+        nothing until the next read, which is exactly how it feels broken.
+
+        The old audio stays in the cache (keyed by voice and speed as well as
+        text), so switching back is instant.
+        """
+        speed = float(speed)
+        if voice == self.voice and abs(speed - self.speed) < 1e-6:
+            return False
+
+        self.voice = voice
+        self.speed = speed
+        if not self._units:
+            return True
+
+        # Re-render from the sentence being read, not from the top.
+        sentence = min(self.current_sentence, max(0, len(self._sentences) - 1))
+        start_unit = self._firsts[sentence] if self._firsts else 0
+        was_playing = self.player.is_playing
+
+        log.debug(
+            "re-rendering from sentence %d with voice=%s speed=%.2f",
+            sentence, voice, speed,
+        )
+        self.scheduler.begin_session(self._units, voice, speed, start_unit)
+        self._last_boundary = -1
+        self._last_sentence = -1
+        self.player.jump_to(start_unit)
+        if was_playing:
+            self.player.play()
+        return True
+
     def stop(self) -> None:
         """Silence immediately and rewind, keeping the document replayable."""
         self.player.stop()

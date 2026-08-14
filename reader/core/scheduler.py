@@ -107,9 +107,19 @@ class SynthScheduler:
     # ------------------------------------------------------------- session
 
     def begin_session(
-        self, sentences: Sequence[Sentence], voice: str, speed: float
+        self,
+        sentences: Sequence[Sentence],
+        voice: str,
+        speed: float,
+        start_index: int = 0,
     ) -> int:
-        """Start reading ``sentences``. Returns the new generation number."""
+        """Start reading ``sentences``. Returns the new generation number.
+
+        ``start_index`` is where playback will actually resume from, which is
+        not always the beginning -- changing voice mid-document restarts the
+        session from wherever the reader had got to.
+        """
+        start_index = max(0, min(start_index, max(0, len(sentences) - 1)))
         with self._state_lock:
             self._gen += 1
             gen = self._gen
@@ -119,9 +129,9 @@ class SynthScheduler:
             self._speed = speed
         self._drain()
         self.player.set_playlist(len(sentences))
-        # Sentence 0 alone, at top priority, so audio can start as early as
+        # That one unit alone, at top priority, so audio can start as early as
         # possible; the rest is queued once it lands.
-        self._enqueue(gen, 0)
+        self._enqueue(gen, start_index)
         return gen
 
     def cancel(self, *, keep_session: bool = True) -> None:
