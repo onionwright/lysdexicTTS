@@ -125,6 +125,9 @@ class ReaderApp(QObject):
         self._candidate = None
         self._settings_dialog: SettingsDialog | None = None
         self._settings_window: SettingsWindow | None = None
+        # Session-scoped: the settings checkbox stays the persistent master
+        # switch, this is just "quiet for a moment".
+        self._noise_paused = False
 
         self.watcher = self._make_watcher()
 
@@ -172,6 +175,7 @@ class ReaderApp(QObject):
         self.panel.prev_clicked.connect(self.ctl.prev_sentence)
         self.panel.sentence_clicked.connect(self._on_sentence_clicked)
         self.panel.settings_clicked.connect(self._on_open_settings)
+        self.panel.noise_toggled.connect(self._on_toggle_noise)
 
         self.tray.read_clipboard.connect(self._on_read_clipboard)
         self.tray.show_panel.connect(self._on_show_panel)
@@ -393,6 +397,12 @@ class ReaderApp(QObject):
         self.ctl.play()
         self._on_playback_started()
 
+    def _on_toggle_noise(self) -> None:
+        """Silence or restore the background sound without touching settings."""
+        self._noise_paused = not self._noise_paused
+        self._apply_settings()
+        log.debug("background sound %s", "paused" if self._noise_paused else "resumed")
+
     def _on_playback_started(self) -> None:
         if self._reading:
             return
@@ -462,11 +472,14 @@ class ReaderApp(QObject):
         self.ctl.player.volume = float(cfg.get("audio", "volume"))
 
         keep_alive = bool(cfg.get("audio", "keep_audio_alive"))
+        # The panel button pauses the background sound for the session without
+        # turning the feature off, so it survives a settings save.
         self.ctl.player.set_keepalive(
-            keep_alive,
+            keep_alive and not self._noise_paused,
             float(cfg.get("audio", "keep_alive_db")),
             str(cfg.get("audio", "keep_alive_color")),
         )
+        self.panel.set_noise_control(keep_alive, not self._noise_paused)
         if keep_alive and self._ready:
             # Open the device now rather than at the first read, so the audio
             # path is already engaged before anything is spoken.

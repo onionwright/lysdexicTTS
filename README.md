@@ -103,6 +103,7 @@ Turn on **Start with Windows** from the tray menu once you're happy with it.
 | Previous | Restarts the current sentence if you're >2s in, else steps back |
 | Jump | Click any sentence in the panel |
 | Panic stop | `Ctrl+Alt+Esc`, registered only while audio is playing |
+| Background sound | Button beside the gear, when keep-alive is on — silences it without stopping the reading |
 | Tray | Read clipboard, show panel, edit settings, autostart, quit |
 
 Settings live under tray → *Settings…* — a plain visual window with real
@@ -131,8 +132,12 @@ and is what people usually mean by "white noise": rain, a fan. Brown
 (6 dB/octave) is softer still. The tables are built in the frequency domain, so
 they loop seamlessly and are exactly the requested RMS level.
 
-It stays on while paused and stopped, deliberately — switching it off at those
-moments would put the gap back exactly where you notice it most.
+It stays on while the reading is paused and stopped, deliberately — switching it
+off at those moments would put the gap back exactly where you notice it most.
+When you genuinely need silence, the reader panel grows a **background-sound
+button** next to the settings gear that silences it in one click without
+stopping what is being read. That button only appears when the feature is
+switched on.
 
 Under *Advanced* there's still a raw TOML editor for anyone who prefers it, and
 it validates before saving so a typo can't stop the app from starting. The file

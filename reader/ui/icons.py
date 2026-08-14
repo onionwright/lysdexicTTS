@@ -69,6 +69,33 @@ def _path(shape: str, r: QRectF) -> QPainterPath:
         p.closeSubpath()
         p.addEllipse(QPointF(x + w * 0.62, y + h * 0.5), w * 0.14, h * 0.14)
         p.addEllipse(QPointF(x + w * 0.62, y + h * 0.5), w * 0.28, h * 0.28)
+    elif shape in ("noise", "noise_off"):
+        # An equaliser-style set of bars: reads as "background sound" without
+        # being confusable with the transport controls beside it.
+        heights = (0.42, 0.78, 1.0, 0.62)
+        bar_w = w * 0.15
+        gap = (w - bar_w * len(heights)) / (len(heights) - 1)
+        for i, rel in enumerate(heights):
+            bar_h = h * rel
+            p.addRoundedRect(
+                QRectF(
+                    x + i * (bar_w + gap),
+                    y + (h - bar_h) / 2.0,
+                    bar_w,
+                    bar_h,
+                ),
+                bar_w * 0.45,
+                bar_w * 0.45,
+            )
+        if shape == "noise_off":
+            # A slash through it, drawn as a thin rotated quad so it stays
+            # crisp at any size.
+            t = w * 0.11
+            p.moveTo(x - t * 0.2, y + h * 0.02)
+            p.lineTo(x + t * 0.8, y - t * 0.2)
+            p.lineTo(x + w + t * 0.2, y + h - t * 0.1)
+            p.lineTo(x + w - t * 0.6, y + h + t * 0.2)
+            p.closeSubpath()
     elif shape == "gear":
         cx, cy = x + w / 2.0, y + h / 2.0
         r_out, r_in, r_hole = w * 0.50, w * 0.34, w * 0.17

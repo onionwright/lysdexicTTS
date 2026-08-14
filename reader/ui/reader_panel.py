@@ -53,6 +53,7 @@ class ReaderPanel(QWidget):
     prev_clicked = Signal()
     sentence_clicked = Signal(int)
     settings_clicked = Signal()
+    noise_toggled = Signal()
     hidden_by_user = Signal()
 
     def __init__(self, parent=None) -> None:
@@ -111,11 +112,17 @@ class ReaderPanel(QWidget):
         self.btn_play = IconButton("play", "Play / pause")
         self.btn_next = IconButton("next", "Next sentence")
         self.btn_stop = IconButton("stop", "Stop")
+        # Pauses the background sound that holds the audio connection open,
+        # separately from the reading itself -- for when you need to hear
+        # someone. Hidden entirely unless that feature is switched on.
+        self.btn_noise = IconButton("noise", "Pause the background sound", size=26)
+        self.btn_noise.hide()
         self.btn_settings = IconButton("gear", "Settings", size=26)
         self.btn_close = IconButton("close", "Hide panel", size=26)
         for b in (self.btn_prev, self.btn_play, self.btn_next, self.btn_stop):
             hb.addWidget(b)
         hb.addSpacing(8)
+        hb.addWidget(self.btn_noise)
         hb.addWidget(self.btn_settings)
         hb.addWidget(self.btn_close)
 
@@ -123,6 +130,7 @@ class ReaderPanel(QWidget):
         self.btn_play.clicked.connect(self.play_pause_clicked)
         self.btn_next.clicked.connect(self.next_clicked)
         self.btn_stop.clicked.connect(self.stop_clicked)
+        self.btn_noise.clicked.connect(self.noise_toggled)
         self.btn_settings.clicked.connect(self.settings_clicked)
         self.btn_close.clicked.connect(self._on_close)
 
@@ -223,6 +231,21 @@ class ReaderPanel(QWidget):
     def set_enabled_transport(self, enabled: bool) -> None:
         for b in (self.btn_prev, self.btn_play, self.btn_next, self.btn_stop):
             b.setEnabled(enabled)
+
+    def set_noise_control(self, available: bool, playing: bool = True) -> None:
+        """Show and update the background-sound button.
+
+        Hidden unless the keep-the-connection-open setting is on, so the panel
+        stays uncluttered for everyone who doesn't need it.
+        """
+        self.btn_noise.setVisible(available)
+        if not available:
+            return
+        self.btn_noise.set_shape("noise" if playing else "noise_off")
+        self.btn_noise.setToolTip(
+            "Pause the background sound" if playing
+            else "Resume the background sound"
+        )
 
     # ---------------------------------------------------------- highlight
 
