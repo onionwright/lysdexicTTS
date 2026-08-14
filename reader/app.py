@@ -211,6 +211,14 @@ class ReaderApp(QObject):
             if self.cfg.get("engine", "warm_on_start"):
                 self.engine.warm()
             self.ctl.start()
+            # Pull down the starter voices the same way the model and af_heart
+            # arrive. Best-effort and after warm-up, so it never delays the
+            # first read and offline simply means fewer voices.
+            if self.cfg.get("engine", "fetch_default_voices"):
+                try:
+                    self.engine.ensure_default_voices()
+                except Exception:
+                    log.debug("could not fetch the starter voices", exc_info=True)
             warning = (
                 ""
                 if self.engine.espeak_fallback_ok

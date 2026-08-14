@@ -34,6 +34,9 @@ DEFAULTS: Dict[str, Any] = {
         "torch_threads": 4,
         "warm_on_start": True,
         "prefer_offline": True,
+        # Download a small starter set of voices on first run, the same way the
+        # model itself arrives. Set false to stay strictly offline.
+        "fetch_default_voices": True,
     },
     "audio": {
         "device": "",  # empty = system default

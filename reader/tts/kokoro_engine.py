@@ -37,6 +37,17 @@ KNOWN_VOICES = [
     "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
 ]
 
+# Fetched automatically on first run, the same way the model and af_heart are,
+# so a fresh install has a real choice of voice rather than exactly one. Two
+# accents and both genders, at ~500KB each.
+DEFAULT_VOICES = [
+    "af_heart",     # American female (the default)
+    "af_bella",     # American female, warmer
+    "am_michael",   # American male
+    "bf_emma",      # British female
+    "bm_george",    # British male
+]
+
 # Pieces of one over-long sentence get a shorter gap than sentence boundaries.
 SUBCHUNK_PAUSE_S = 0.08
 
@@ -134,10 +145,75 @@ class KokoroEngine(TtsEngine):
             )
 
     def available_voices(self) -> List[str]:
-        local = sorted(_local_voice_names(self.repo_id))
-        if not local:
-            return [self.voice]
-        return local
+        """Voices already downloaded, so usable right now with no network."""
+        local = set(_local_voice_names(self.repo_id))
+        english = sorted(v for v in local if v in KNOWN_VOICES)
+        return english or sorted(local) or [self.voice]
+
+    def downloadable_voices(self) -> List[str]:
+        """English voices that exist upstream but are not installed here."""
+        have = set(self.available_voices())
+        return [v for v in KNOWN_VOICES if v not in have]
+
+    def download_voice(self, name: str) -> bool:
+        """Fetch one voice pack from HuggingFace.
+
+        Startup deliberately pins the process offline so a tray app cannot
+        stall on DNS at logon, and that pin has to be lifted for a download the
+        user explicitly asked for. The env var alone is not enough --
+        huggingface_hub snapshots it into a module constant at import time --
+        so both are flipped and then restored.
+        """
+        if name not in KNOWN_VOICES:
+            log.warning("refusing to download an unknown voice: %r", name)
+            return False
+
+        previous_env = os.environ.pop("HF_HUB_OFFLINE", None)
+        constants = None
+        previous_flag = None
+        try:
+            from huggingface_hub import constants as constants  # noqa: PLC0414
+
+            previous_flag = getattr(constants, "HF_HUB_OFFLINE", None)
+            constants.HF_HUB_OFFLINE = False
+        except Exception:
+            log.debug("could not clear the huggingface offline flag", exc_info=True)
+
+        try:
+            from huggingface_hub import hf_hub_download
+
+            path = hf_hub_download(
+                repo_id=self.repo_id, filename=f"voices/{name}.pt"
+            )
+            log.info("downloaded voice %s -> %s", name, path)
+            return True
+        except Exception:
+            log.exception("could not download voice %r", name)
+            return False
+        finally:
+            if previous_env is not None:
+                os.environ["HF_HUB_OFFLINE"] = previous_env
+            if constants is not None and previous_flag is not None:
+                constants.HF_HUB_OFFLINE = previous_flag
+
+    def ensure_default_voices(self) -> List[str]:
+        """Fetch the starter set if it isn't already cached.
+
+        The model and ``af_heart`` arrive this way on first run; this simply
+        does the same for a few more so a new install has a real choice of
+        voices instead of exactly one. Best-effort and silent: no network means
+        no extra voices, not a failure.
+        """
+        have = set(_local_voice_names(self.repo_id))
+        added = []
+        for name in DEFAULT_VOICES:
+            if name in have:
+                continue
+            if self.download_voice(name):
+                added.append(name)
+        if added:
+            log.info("downloaded starter voices: %s", ", ".join(added))
+        return added
 
     def warm(self) -> None:
         """Run one tiny synthesis so the first real sentence isn't paying for

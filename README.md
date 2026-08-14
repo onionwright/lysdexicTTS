@@ -246,8 +246,12 @@ feels instant.
   script rather than a packed executable (packers are what actually trip
   heuristics) and **never writes captured text to disk**, but you may still need
   a Defender exclusion.
-- **Only `af_heart` is downloaded.** Other voices trigger a lazy HuggingFace
-  fetch on first use and fail offline.
+- **Voices download themselves.** On first run the app fetches a starter set of
+  five — Heart, Bella, Michael (American) and Emma, George (British) — the same
+  way the model itself arrives, about 500 KB each. 23 more English voices are
+  one click away under *Settings → Voice → Get another voice*. Nothing is
+  vendored into this repository; set `engine.fetch_default_voices = false` to
+  stay strictly offline and keep only `af_heart`.
 - **`HF_HUB_OFFLINE` is set automatically** when the model snapshot is already
   cached, because kokoro otherwise makes a network round trip on every startup
   to revalidate — which would stall a tray app at logon.
@@ -283,6 +287,9 @@ feels instant.
 - [x] **Phase 4** — TOML settings, autostart, single instance, logging,
       per-monitor DPI, device-loss recovery, panic hotkey
 
-Not built yet: voice download management, and word-level highlighting — the
-per-word timings are already computed and kept on every chunk, so that last one
-is mostly UI work.
+Not built yet: word-level highlighting — the per-word timings are already
+computed and kept on every chunk, so it is mostly UI work.
+
+Kokoro-82M is Apache-2.0 licensed. The model and its voice packs are downloaded
+from [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) at runtime
+rather than redistributed here.

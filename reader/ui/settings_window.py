@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, List, Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -137,6 +137,25 @@ QFrame#divider {{ background: {THEME.panel_border}; max-height: 1px; }}
 QScrollArea {{ border: none; background: transparent; }}
 QScrollArea > QWidget > QWidget {{ background: transparent; }}
 """
+
+
+class _VoiceDownloader(QThread):
+    """One voice fetch, off the GUI thread."""
+
+    done = Signal(str, bool)
+
+    def __init__(self, engine, name: str, parent=None) -> None:
+        super().__init__(parent)
+        self.engine = engine
+        self.name = name
+
+    def run(self) -> None:
+        ok = False
+        try:
+            ok = bool(self.engine.download_voice(self.name))
+        except Exception:
+            log.exception("voice download failed for %r", self.name)
+        self.done.emit(self.name, ok)
 
 
 class SettingsWindow(QWidget):
@@ -319,28 +338,33 @@ class SettingsWindow(QWidget):
     # --------------------------------------------------------------- pages
 
     def _page_voice(self, column: QVBoxLayout) -> None:
-        cached = []
-        if self.engine is not None:
-            try:
-                cached = self.engine.available_voices()
-            except Exception:
-                cached = []
-        cached = cached or ["af_heart"]
-        options = [(_pretty_voice(v), v) for v in cached]
         self.voice_box = self._combo(
-            column, "Voice",
-            "The speaking voice. Only downloaded voices are listed.",
-            options, "engine", "voice",
+            column, "Voice", "The voice that reads to you.",
+            [], "engine", "voice",
         )
-        missing = len([v for v in KNOWN_VOICES if v not in cached])
-        if missing:
-            note = QLabel(
-                f"{missing} more voices exist but are not downloaded yet."
-            )
-            note.setObjectName("settingHelp")
-            note.setWordWrap(True)
-            column.addWidget(note)
 
+        self._divider(column)
+
+        holder = self._row(
+            column, "Get another voice",
+            "Voices are about half a megabyte each and download in a second or "
+            "two. You need to be online just for the download.",
+        )
+        row = QHBoxLayout()
+        self.add_box = QComboBox()
+        row.addWidget(self.add_box)
+        self.btn_get = QPushButton("Download")
+        self.btn_get.clicked.connect(self._download_voice)
+        row.addWidget(self.btn_get)
+        row.addStretch(1)
+        holder.addLayout(row)
+
+        self.voice_status = QLabel("")
+        self.voice_status.setObjectName("settingHelp")
+        self.voice_status.setWordWrap(True)
+        column.addWidget(self.voice_status)
+
+        self._refresh_voice_lists()
         self._divider(column)
         self.speed_slider = self._slider(
             column, "Speaking speed",
@@ -511,13 +535,81 @@ class SettingsWindow(QWidget):
         btn_reset.clicked.connect(self._restore_defaults)
         holder.addWidget(btn_reset, 0, Qt.AlignmentFlag.AlignLeft)
 
+    # -------------------------------------------------------------- voices
+
+    def _refresh_voice_lists(self) -> None:
+        """Rebuild both voice dropdowns from what is actually on disk."""
+        installed, more = ["af_heart"], []
+        if self.engine is not None:
+            try:
+                installed = self.engine.available_voices() or installed
+                more = self.engine.downloadable_voices()
+            except Exception:
+                log.debug("could not list voices", exc_info=True)
+
+        was_loading, self._loading = self._loading, True
+        try:
+            current = self.cfg.get("engine", "voice")
+            self.voice_box.clear()
+            for name in installed:
+                self.voice_box.addItem(_pretty_voice(name), name)
+            _select_data(self.voice_box, current)
+
+            self.add_box.clear()
+            for name in more:
+                self.add_box.addItem(_pretty_voice(name), name)
+        finally:
+            self._loading = was_loading
+
+        self.add_box.setEnabled(bool(more))
+        self.btn_get.setEnabled(bool(more))
+        if not more:
+            self.add_box.addItem("All voices installed", None)
+            self.voice_status.setText(
+                f"All {len(installed)} voices are installed."
+            )
+        elif not self.voice_status.text():
+            self.voice_status.setText(
+                f"{len(installed)} installed, {len(more)} more available."
+            )
+
+    def _download_voice(self) -> None:
+        name = self.add_box.currentData()
+        if not name or self.engine is None:
+            return
+        self.btn_get.setEnabled(False)
+        self.add_box.setEnabled(False)
+        self.voice_status.setText(f"Downloading {_pretty_voice(name)}…")
+
+        # Off the GUI thread: this is a network call.
+        self._downloader = _VoiceDownloader(self.engine, name, self)
+        self._downloader.done.connect(self._on_voice_downloaded)
+        self._downloader.start()
+
+    def _on_voice_downloaded(self, name: str, ok: bool) -> None:
+        if ok:
+            self.voice_status.setText(
+                f"{_pretty_voice(name)} is ready, and is now selected."
+            )
+            self.cfg.set("engine", "voice", name)
+            self._refresh_voice_lists()
+            _select_data(self.voice_box, name)
+            self._save_timer.start()
+        else:
+            self.voice_status.setText(
+                f"Could not download {_pretty_voice(name)}. "
+                "Check your internet connection and try again."
+            )
+            self._refresh_voice_lists()
+        self.btn_get.setEnabled(True)
+        self.add_box.setEnabled(True)
+
     # ------------------------------------------------------------- values
 
     def _load_values(self) -> None:
         """Populate every control from the current config."""
         self._loading = True
         try:
-            _select_data(self.voice_box, self.cfg.get("engine", "voice"))
             _select_data(self.mode_box, self.cfg.get("selection", "mode"))
             _select_data(self.device_box, self.cfg.get("audio", "device") or "")
 
@@ -559,6 +651,9 @@ class SettingsWindow(QWidget):
             self.autostart_check.setChecked(autostart.is_enabled())
         finally:
             self._loading = False
+        # Rebuilds the dropdowns from disk, so a voice downloaded elsewhere
+        # (or on first run) shows up without a restart.
+        self._refresh_voice_lists()
         self._update_preview()
 
     def _set(self, section: str, key: str, value) -> None:
