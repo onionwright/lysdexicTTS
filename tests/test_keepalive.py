@@ -119,6 +119,68 @@ def test_can_be_turned_back_off():
     assert np.all(pull(p) == 0.0)
 
 
+@pytest.mark.parametrize(
+    "color,expected_slope",
+    [("white", 0.0), ("pink", -3.0), ("brown", -6.0)],
+)
+def test_noise_colours_have_the_spectral_slope_they_claim(color, expected_slope):
+    """Flat white noise puts its energy in the top octaves, which is why it
+    sounds like an electrical buzz rather than like rain."""
+    from reader.audio.player import _comfort_noise
+
+    signal = _comfort_noise(SR * 5, SR, color)
+    spectrum = np.abs(np.fft.rfft(signal)) ** 2
+    freqs = np.fft.rfftfreq(len(signal), 1 / SR)
+
+    centres, levels = [], []
+    f = 125.0
+    while f * 2 <= 8000:
+        band = (freqs >= f) & (freqs < f * 2)
+        if band.any():
+            centres.append(np.log2(f))
+            levels.append(10 * np.log10(spectrum[band].mean() + 1e-30))
+        f *= 2
+    slope = float(np.polyfit(centres, levels, 1)[0])
+    assert abs(slope - expected_slope) < 1.2, (
+        f"{color} measured {slope:.2f} dB/octave, expected {expected_slope}"
+    )
+
+
+def test_noise_is_unit_rms_so_the_db_setting_is_meaningful():
+    from reader.audio.player import _comfort_noise
+
+    for color in ("white", "pink", "brown"):
+        signal = _comfort_noise(SR, SR, color)
+        rms = float(np.sqrt(np.mean(signal ** 2)))
+        assert abs(rms - 1.0) < 0.01, f"{color} rms was {rms}"
+
+
+def test_requested_level_is_delivered_as_rms_dbfs():
+    p = make_player()
+    p.set_keepalive(True, -70.0, "pink")
+    blocks = [pull(p) for _ in range(20)]
+    signal = np.concatenate(blocks)
+    rms_db = 20 * np.log10(np.sqrt(np.mean(signal ** 2)))
+    assert abs(rms_db + 70.0) < 1.0, f"asked for -70 dBFS, got {rms_db:.1f}"
+
+
+def test_changing_colour_rebuilds_the_table_outside_the_callback():
+    p = make_player()
+    p.set_keepalive(True, -70.0, "pink")
+    pink = p._noise.copy()
+    p.set_keepalive(True, -70.0, "brown")
+    assert p._noise.shape == pink.shape
+    assert not np.array_equal(p._noise, pink), "table should have been rebuilt"
+    assert p._noise_pos == 0
+    assert p.callback_error is None
+
+
+def test_unknown_colour_falls_back_to_pink():
+    p = make_player()
+    p.set_keepalive(True, -70.0, "chartreuse")
+    assert p._noise_color == "pink"
+
+
 def test_noise_table_wraps_without_error():
     """The table is finite; the callback must cycle it cleanly."""
     p = make_player()

@@ -119,10 +119,20 @@ live preview.
 headphones, and anything with noise cancelling. The pauses between sentences are
 exact digital zeros, and some devices read a run of zeros as "no signal" and gate
 their processing off and on — audible as the noise cancelling switching around
-every sentence. Enabling this mixes an inaudible noise floor into the output so
+every sentence. Enabling this mixes a near-inaudible noise floor into the output so
 it is never digitally silent. Measured on a 5.4-second read: 0.51 s of digital
-silence across 6 blocks becomes zero, with the noise floor at −76 dBFS and the
-speech itself unchanged.
+silence across 6 blocks becomes zero, with the speech itself unchanged.
+
+The level is in RMS dBFS and −70 is a good starting point; some devices need
+more signal than others to stay awake. The sound defaults to **pink** noise,
+not white — white noise has a flat spectrum, which puts most of its energy in
+the top octaves and sounds like an electrical buzz. Pink falls at 3 dB/octave
+and is what people usually mean by "white noise": rain, a fan. Brown
+(6 dB/octave) is softer still. The tables are built in the frequency domain, so
+they loop seamlessly and are exactly the requested RMS level.
+
+It stays on while paused and stopped, deliberately — switching it off at those
+moments would put the gap back exactly where you notice it most.
 
 Under *Advanced* there's still a raw TOML editor for anyone who prefers it, and
 it validates before saving so a typo can't stop the app from starting. The file

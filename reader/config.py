@@ -53,7 +53,13 @@ DEFAULTS: Dict[str, Any] = {
         # which is audible as the noise cancelling switching. Off by default
         # because it keeps the audio device awake.
         "keep_audio_alive": False,
-        "keep_alive_db": -75.0,
+        # -70 dB RMS is the level measured to hold real hearing aids awake;
+        # quieter and some of them still gate off between sentences.
+        "keep_alive_db": -70.0,
+        # white | pink | brown. Pink by default: white noise is flat, which
+        # puts most of its energy in the top octaves and sounds like an
+        # electrical buzz. Pink is what people normally mean by white noise.
+        "keep_alive_color": "pink",
     },
     "playback": {
         "lookahead_sentences": 3,

@@ -44,11 +44,40 @@ DEFAULT_FADE_MS = 8.0
 # not a perceptible period, small enough to stay trivial in memory (~480KB).
 KEEPALIVE_SECONDS = 5
 
+# Spectral slope per colour, as the exponent in 1/f**(n/2) applied to amplitude.
+# White is flat, which puts most of its energy in the top octaves and is why it
+# sounds harsh and electrical. Pink falls at 3dB/octave and is what people
+# normally mean by "white noise" -- rain, a fan. Brown falls at 6dB/octave.
+NOISE_COLORS = {"white": 0.0, "pink": 1.0, "brown": 2.0}
 
-def _comfort_noise(frames: int) -> np.ndarray:
-    """Unit-scale white noise, generated once at startup."""
-    rng = np.random.default_rng(20240813)
-    return rng.standard_normal(int(frames)).astype(np.float32) * 0.25
+# Below this the energy is inaudible rumble that does nothing to keep a device
+# awake, and risks pushing DC-ish wander into the output.
+_NOISE_HIGHPASS_HZ = 60.0
+
+
+def _comfort_noise(
+    frames: int, sample_rate: int, color: str = "pink"
+) -> np.ndarray:
+    """Spectrally shaped noise at unit RMS, generated once at startup.
+
+    Built in the frequency domain, which makes the table exactly periodic, so
+    looping it is seamless -- no discontinuity at the wrap point.
+    """
+    n = max(2, int(frames))
+    exponent = NOISE_COLORS.get(color, NOISE_COLORS["pink"])
+    rng = np.random.default_rng(20260813)
+    spectrum = np.fft.rfft(rng.standard_normal(n))
+    freqs = np.fft.rfftfreq(n, d=1.0 / float(sample_rate))
+
+    scale = np.zeros_like(freqs)
+    audible = freqs >= _NOISE_HIGHPASS_HZ
+    scale[audible] = freqs[audible] ** (-exponent / 2.0)
+
+    shaped = np.fft.irfft(spectrum * scale, n)
+    rms = float(np.sqrt(np.mean(shaped ** 2)))
+    if rms > 0.0:
+        shaped = shaped / rms  # unit RMS, so the dB setting means dBFS RMS
+    return shaped.astype(np.float32)
 
 
 class StreamPlayer:
@@ -79,7 +108,10 @@ class StreamPlayer:
         # switching off and on again. Mixing in an inaudible noise floor keeps
         # the path continuously engaged. Precomputed, because the callback must
         # not allocate or call into the RNG.
-        self._noise = _comfort_noise(sample_rate * KEEPALIVE_SECONDS)
+        self._noise_color = "pink"
+        self._noise = _comfort_noise(
+            sample_rate * KEEPALIVE_SECONDS, sample_rate, self._noise_color
+        )
         self._noise_pos = 0
         self._keepalive = 0.0
 
@@ -224,14 +256,27 @@ class StreamPlayer:
             return float("-inf")
         return 20.0 * math.log10(self._keepalive)
 
-    def set_keepalive(self, enabled: bool, level_db: float = -75.0) -> None:
-        """Hold the audio path open with an inaudible noise floor.
+    def set_keepalive(
+        self, enabled: bool, level_db: float = -70.0, color: str = "pink"
+    ) -> None:
+        """Hold the audio path open with a near-inaudible noise floor.
 
         Deliberately applied *after* volume and after every fade, so it is
         continuous even while paused, stopped or silent between sentences --
         which is the entire point. It is what stops a hearing aid or Bluetooth
         headset from gating its processing off and on around each sentence.
+
+        ``level_db`` is RMS dBFS. ``color`` selects the spectral slope; see
+        NOISE_COLORS.
         """
+        color = color if color in NOISE_COLORS else "pink"
+        if color != self._noise_color:
+            # Rebuilt here, never in the audio callback.
+            self._noise_color = color
+            self._noise = _comfort_noise(
+                self.sample_rate * KEEPALIVE_SECONDS, self.sample_rate, color
+            )
+            self._noise_pos = 0
         self._keepalive = (
             0.0 if not enabled else float(10.0 ** (float(level_db) / 20.0))
         )

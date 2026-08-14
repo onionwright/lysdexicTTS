@@ -389,8 +389,19 @@ class SettingsWindow(QWidget):
         self.keepalive_slider = self._slider(
             column, "How quiet that sound is",
             "Lower is quieter. If your device still cuts out between "
-            "sentences, move this up a little until it stops.",
+            "sentences, move this up a little until it stops. Around -70 works "
+            "for most hearing aids.",
             "audio", "keep_alive_db", -90.0, -40.0, 5.0, _describe_db,
+        )
+        self.keepalive_color = self._combo(
+            column, "What that sound is like",
+            "If it sounds harsh or electrical, try a softer one.",
+            [
+                ("Steady rain — soft and even", "pink"),
+                ("Deep rumble — softest, like distant wind", "brown"),
+                ("Hiss — bright, like radio static", "white"),
+            ],
+            "audio", "keep_alive_color",
         )
 
     def _page_reading(self, column: QVBoxLayout) -> None:
@@ -628,6 +639,9 @@ class SettingsWindow(QWidget):
         self._loading = True
         try:
             _select_data(self.mode_box, self.cfg.get("selection", "mode"))
+            _select_data(
+                self.keepalive_color, self.cfg.get("audio", "keep_alive_color")
+            )
             _select_data(self.device_box, self.cfg.get("audio", "device") or "")
 
             for slider, section, key in (

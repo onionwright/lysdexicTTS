@@ -463,7 +463,9 @@ class ReaderApp(QObject):
 
         keep_alive = bool(cfg.get("audio", "keep_audio_alive"))
         self.ctl.player.set_keepalive(
-            keep_alive, float(cfg.get("audio", "keep_alive_db"))
+            keep_alive,
+            float(cfg.get("audio", "keep_alive_db")),
+            str(cfg.get("audio", "keep_alive_color")),
         )
         if keep_alive and self._ready:
             # Open the device now rather than at the first read, so the audio
