@@ -47,6 +47,13 @@ DEFAULTS: Dict[str, Any] = {
         "trailing_pause_s": 0.16,
         "paragraph_pause_s": 0.32,
         "fade_ms": 8,
+        # Hold the audio connection open with an inaudible noise floor. Some
+        # hearing aids and Bluetooth devices treat digital silence as "no
+        # signal" and gate their processing off and on around every sentence,
+        # which is audible as the noise cancelling switching. Off by default
+        # because it keeps the audio device awake.
+        "keep_audio_alive": False,
+        "keep_alive_db": -75.0,
     },
     "playback": {
         "lookahead_sentences": 3,

@@ -115,6 +115,15 @@ Generous type and loose line spacing are among the few interventions with real
 evidence behind them for dyslexic readers, so they get their own page with a
 live preview.
 
+**Keep the sound connection open** (Voice page) is for hearing aids, Bluetooth
+headphones, and anything with noise cancelling. The pauses between sentences are
+exact digital zeros, and some devices read a run of zeros as "no signal" and gate
+their processing off and on — audible as the noise cancelling switching around
+every sentence. Enabling this mixes an inaudible noise floor into the output so
+it is never digitally silent. Measured on a 5.4-second read: 0.51 s of digital
+silence across 6 blocks becomes zero, with the noise floor at −76 dBFS and the
+speech itself unchanged.
+
 Under *Advanced* there's still a raw TOML editor for anyone who prefers it, and
 it validates before saving so a typo can't stop the app from starting. The file
 lives at `%APPDATA%\KokoroReader\settings.toml`. It is edited in-app rather than

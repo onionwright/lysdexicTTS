@@ -461,6 +461,18 @@ class ReaderApp(QObject):
         cfg = self.cfg
         self.ctl.player.volume = float(cfg.get("audio", "volume"))
 
+        keep_alive = bool(cfg.get("audio", "keep_audio_alive"))
+        self.ctl.player.set_keepalive(
+            keep_alive, float(cfg.get("audio", "keep_alive_db"))
+        )
+        if keep_alive and self._ready:
+            # Open the device now rather than at the first read, so the audio
+            # path is already engaged before anything is spoken.
+            try:
+                self.ctl.player.ensure_ready()
+            except Exception:
+                log.debug("could not open the audio device early", exc_info=True)
+
         # Re-renders the loaded document if the voice or speed actually
         # changed, so the choice takes effect on what is on screen right now.
         voice = str(cfg.get("engine", "voice"))

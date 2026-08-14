@@ -27,6 +27,7 @@ transition, and the fade-in all complete inside a single callback.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from typing import Callable, List, Optional
 
@@ -38,6 +39,16 @@ log = logging.getLogger(__name__)
 
 DEFAULT_BLOCKSIZE = 2048  # 85ms at 24kHz
 DEFAULT_FADE_MS = 8.0
+
+# Length of the precomputed comfort-noise table. Long enough that its repeat is
+# not a perceptible period, small enough to stay trivial in memory (~480KB).
+KEEPALIVE_SECONDS = 5
+
+
+def _comfort_noise(frames: int) -> np.ndarray:
+    """Unit-scale white noise, generated once at startup."""
+    rng = np.random.default_rng(20240813)
+    return rng.standard_normal(int(frames)).astype(np.float32) * 0.25
 
 
 class StreamPlayer:
@@ -60,6 +71,17 @@ class StreamPlayer:
         self._fade_in = make_fade(max(1, int(sample_rate * fade_ms / 1000.0)))
         self._fade_out = self._fade_in[::-1].copy()
         self._fade_n = len(self._fade_in)
+
+        # Comfort noise. Some audio hardware -- hearing aids and Bluetooth
+        # devices especially -- treats a run of digital zeros as "no signal"
+        # and powers down its audio path or re-engages noise cancelling. That
+        # makes the 0.16s gap between sentences audible as the processing
+        # switching off and on again. Mixing in an inaudible noise floor keeps
+        # the path continuously engaged. Precomputed, because the callback must
+        # not allocate or call into the RNG.
+        self._noise = _comfort_noise(sample_rate * KEEPALIVE_SECONDS)
+        self._noise_pos = 0
+        self._keepalive = 0.0
 
         # --- playlist (written by the scheduler thread, read by the callback)
         self._playlist: List[Optional[np.ndarray]] = []
@@ -194,6 +216,25 @@ class StreamPlayer:
     @volume.setter
     def volume(self, v: float) -> None:
         self._volume = max(0.0, min(1.0, float(v)))
+
+    @property
+    def keepalive_db(self) -> float:
+        """Comfort-noise level in dBFS, or -inf when off."""
+        if self._keepalive <= 0.0:
+            return float("-inf")
+        return 20.0 * math.log10(self._keepalive)
+
+    def set_keepalive(self, enabled: bool, level_db: float = -75.0) -> None:
+        """Hold the audio path open with an inaudible noise floor.
+
+        Deliberately applied *after* volume and after every fade, so it is
+        continuous even while paused, stopped or silent between sentences --
+        which is the entire point. It is what stops a hearing aid or Bluetooth
+        headset from gating its processing off and on around each sentence.
+        """
+        self._keepalive = (
+            0.0 if not enabled else float(10.0 ** (float(level_db) / 20.0))
+        )
 
     def position_seconds(self) -> float:
         return self.pos / float(self.sample_rate)
@@ -361,6 +402,22 @@ class StreamPlayer:
 
             if self._volume != 1.0:
                 out *= self._volume
+
+            # Comfort noise last, so pauses and silences are never digitally
+            # zero. Slice-add into an existing view: no allocation.
+            level = self._keepalive
+            if level > 0.0:
+                size = self._noise.size
+                pos = self._noise_pos
+                if pos + frames <= size:
+                    out += self._noise[pos : pos + frames] * level
+                    pos += frames
+                else:
+                    head = size - pos
+                    out[:head] += self._noise[pos:] * level
+                    out[head:] += self._noise[: frames - head] * level
+                    pos = frames - head
+                self._noise_pos = 0 if pos >= size else pos
         except Exception as exc:  # must never propagate: it would abort the stream
             try:
                 outdata.fill(0)

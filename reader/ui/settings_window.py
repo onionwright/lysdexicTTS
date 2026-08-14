@@ -376,6 +376,23 @@ class SettingsWindow(QWidget):
             "audio", "volume", 0.0, 1.0, 0.05, lambda v: f"{int(v * 100)} %",
         )
 
+        self._divider(column)
+        self.keepalive_check = self._check(
+            column, "Keep the sound connection open",
+            "For hearing aids, Bluetooth headphones and anything with noise "
+            "cancelling. Without this, the silence between sentences can read "
+            "as 'no sound at all' and make the device switch its processing "
+            "off and on between every sentence. This holds the connection open "
+            "with a sound too quiet to hear.",
+            "audio", "keep_audio_alive",
+        )
+        self.keepalive_slider = self._slider(
+            column, "How quiet that sound is",
+            "Lower is quieter. If your device still cuts out between "
+            "sentences, move this up a little until it stops.",
+            "audio", "keep_alive_db", -90.0, -40.0, 5.0, _describe_db,
+        )
+
     def _page_reading(self, column: QVBoxLayout) -> None:
         self.sentence_pause = self._slider(
             column, "Pause between sentences",
@@ -621,6 +638,7 @@ class SettingsWindow(QWidget):
                 (self.restart_threshold, "playback", "prev_restart_threshold_s"),
                 (self.lookahead, "playback", "lookahead_sentences"),
                 (self.hide_slider, "selection", "pill_auto_hide_ms"),
+                (self.keepalive_slider, "audio", "keep_alive_db"),
                 (self.font_slider, "ui", "panel_font_pt"),
                 (self.spacing_slider, "ui", "panel_line_spacing"),
                 (self.threads_slider, "engine", "torch_threads"),
@@ -639,6 +657,9 @@ class SettingsWindow(QWidget):
             )
             self.show_panel_check.setChecked(
                 bool(self.cfg.get("ui", "show_panel_on_read"))
+            )
+            self.keepalive_check.setChecked(
+                bool(self.cfg.get("audio", "keep_audio_alive"))
             )
             self.notify_check.setChecked(
                 bool(self.cfg.get("app", "notify_on_ready"))
@@ -715,6 +736,19 @@ class SettingsWindow(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+
+
+def _describe_db(value: float) -> str:
+    """dBFS with a plain-language hint, since 'dB' means nothing to most people."""
+    if value <= -80:
+        word = "silent"
+    elif value <= -65:
+        word = "inaudible"
+    elif value <= -55:
+        word = "very faint"
+    else:
+        word = "faint"
+    return f"{int(value)} dB · {word}"
 
 
 def _pretty_voice(code: str) -> str:
