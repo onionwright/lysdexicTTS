@@ -171,6 +171,7 @@ class ReaderApp(QObject):
         self.panel.next_clicked.connect(self.ctl.next_sentence)
         self.panel.prev_clicked.connect(self.ctl.prev_sentence)
         self.panel.sentence_clicked.connect(self._on_sentence_clicked)
+        self.panel.settings_clicked.connect(self._on_open_settings)
 
         self.tray.read_clipboard.connect(self._on_read_clipboard)
         self.tray.show_panel.connect(self._on_show_panel)

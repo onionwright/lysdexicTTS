@@ -7,6 +7,8 @@ path geometry that stay crisp at any scale.
 
 from __future__ import annotations
 
+import math
+
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QAbstractButton
@@ -67,6 +69,23 @@ def _path(shape: str, r: QRectF) -> QPainterPath:
         p.closeSubpath()
         p.addEllipse(QPointF(x + w * 0.62, y + h * 0.5), w * 0.14, h * 0.14)
         p.addEllipse(QPointF(x + w * 0.62, y + h * 0.5), w * 0.28, h * 0.28)
+    elif shape == "gear":
+        cx, cy = x + w / 2.0, y + h / 2.0
+        r_out, r_in, r_hole = w * 0.50, w * 0.34, w * 0.17
+        teeth = 8
+        points = []
+        for i in range(teeth * 2):
+            angle = math.pi * i / teeth
+            radius = r_out if i % 2 == 0 else r_in
+            points.append(
+                (cx + radius * math.cos(angle), cy + radius * math.sin(angle))
+            )
+        p.moveTo(*points[0])
+        for point in points[1:]:
+            p.lineTo(*point)
+        p.closeSubpath()
+        # Default odd-even fill turns this into the gear's centre hole.
+        p.addEllipse(QPointF(cx, cy), r_hole, r_hole)
     elif shape == "copy":
         p.addRoundedRect(QRectF(x + w * 0.06, y, w * 0.62, h * 0.78), 2, 2)
         p.addRoundedRect(QRectF(x + w * 0.32, y + h * 0.22, w * 0.62, h * 0.78), 2, 2)

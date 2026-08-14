@@ -52,6 +52,7 @@ class ReaderPanel(QWidget):
     next_clicked = Signal()
     prev_clicked = Signal()
     sentence_clicked = Signal(int)
+    settings_clicked = Signal()
     hidden_by_user = Signal()
 
     def __init__(self, parent=None) -> None:
@@ -110,16 +111,19 @@ class ReaderPanel(QWidget):
         self.btn_play = IconButton("play", "Play / pause")
         self.btn_next = IconButton("next", "Next sentence")
         self.btn_stop = IconButton("stop", "Stop")
+        self.btn_settings = IconButton("gear", "Settings", size=26)
         self.btn_close = IconButton("close", "Hide panel", size=26)
         for b in (self.btn_prev, self.btn_play, self.btn_next, self.btn_stop):
             hb.addWidget(b)
-        hb.addSpacing(6)
+        hb.addSpacing(8)
+        hb.addWidget(self.btn_settings)
         hb.addWidget(self.btn_close)
 
         self.btn_prev.clicked.connect(self.prev_clicked)
         self.btn_play.clicked.connect(self.play_pause_clicked)
         self.btn_next.clicked.connect(self.next_clicked)
         self.btn_stop.clicked.connect(self.stop_clicked)
+        self.btn_settings.clicked.connect(self.settings_clicked)
         self.btn_close.clicked.connect(self._on_close)
 
         self._header = header
@@ -270,14 +274,49 @@ class ReaderPanel(QWidget):
         self.text.setExtraSelections(selections)
 
     def _scroll_to(self, index: int) -> None:
+        """Scroll so the *whole* spoken sentence is visible, not just its start.
+
+        ``ensureCursorVisible`` on the first character is not enough: it
+        considers the job done as soon as one word is in frame, so a sentence
+        that runs past the bottom edge stays half hidden and you lose the line
+        you are following. This scrolls far enough to bring the last word into
+        view, but never so far that the first word is pushed off the top -- and
+        when a sentence is taller than the window, the start wins, because that
+        is where reading begins.
+        """
         if not (0 <= index < len(self._sentences)):
             return
-        doc_end = self.text.document().characterCount() - 1
+        doc = self.text.document()
+        doc_end = doc.characterCount() - 1
         s = self._sentences[index]
-        cur = QTextCursor(self.text.document())
-        cur.setPosition(max(0, min(s.char_start, doc_end)))
-        self.text.setTextCursor(cur)
-        self.text.ensureCursorVisible()
+
+        start = QTextCursor(doc)
+        start.setPosition(max(0, min(s.char_start, doc_end)))
+        end = QTextCursor(doc)
+        end.setPosition(max(0, min(s.char_end, doc_end)))
+
+        # Cursor rects are in viewport coordinates.
+        r_start = self.text.cursorRect(start)
+        r_end = self.text.cursorRect(end)
+        top = min(r_start.top(), r_end.top())
+        bottom = max(r_start.bottom(), r_end.bottom())
+
+        viewport = self.text.viewport().height()
+        margin = self.text.fontMetrics().height()  # keep a line of breathing room
+
+        if bottom - top >= viewport - 2 * margin:
+            # Taller than the window: show the beginning.
+            delta = top - margin
+        else:
+            delta = 0
+            if bottom > viewport - margin:
+                delta = bottom - (viewport - margin)
+            if top - delta < margin:
+                delta = top - margin
+
+        if delta:
+            bar = self.text.verticalScrollBar()
+            bar.setValue(bar.value() + int(delta))
 
     # -------------------------------------------------------------- events
 

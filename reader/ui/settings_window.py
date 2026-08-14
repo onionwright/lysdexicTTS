@@ -201,7 +201,7 @@ class SettingsWindow(QWidget):
         self._add_page("Voice", self._page_voice)
         self._add_page("Reading", self._page_reading)
         self._add_page("Selecting text", self._page_selection)
-        self._add_page("Text size", self._page_appearance)
+        self._add_page("Text Settings", self._page_appearance)
         self._add_page("Starting up", self._page_startup)
         self._add_page("Advanced", self._page_advanced)
 
