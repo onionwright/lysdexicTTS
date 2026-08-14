@@ -18,7 +18,7 @@
     Skip the Start menu entry.
 
 .PARAMETER NoAutostart
-    Skip the "start with Windows" entry.
+    Skip the "start with Windows" shortcut in the Startup folder.
 #>
 [CmdletBinding()]
 param(
@@ -67,6 +67,22 @@ function Invoke-Native {
     } finally {
         $ErrorActionPreference = $prev
     }
+}
+
+function New-AppShortcut($Path) {
+    <#
+        One .lnk writer for both the Start menu and the Startup folder, so the
+        two cannot drift in target, icon or window style.
+    #>
+    $shell = New-Object -ComObject WScript.Shell
+    $sc = $shell.CreateShortcut($Path)
+    $sc.TargetPath = $VenvPyw
+    $sc.Arguments = '"' + $Launcher + '"'
+    $sc.WorkingDirectory = $Root
+    $sc.Description = 'Text-to-speech for dyslexic readers'
+    $sc.IconLocation = $IconPath
+    $sc.WindowStyle = 7
+    $sc.Save()
 }
 
 function Ask($question, $defaultYes) {
@@ -213,37 +229,45 @@ if (-not $NoShortcut) {
 }
 if ($wantShortcut) {
     $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
-    $lnk = Join-Path $programs 'Lysdexic TTS.lnk'
-    $shell = New-Object -ComObject WScript.Shell
-    $sc = $shell.CreateShortcut($lnk)
-    $sc.TargetPath = $VenvPyw
-    $sc.Arguments = '"' + $Launcher + '"'
-    $sc.WorkingDirectory = $Root
-    $sc.Description = 'Text-to-speech for dyslexic readers'
-    $sc.IconLocation = $IconPath
-    $sc.WindowStyle = 7
-    $sc.Save()
-    Write-Ok "created: $lnk"
+    New-AppShortcut (Join-Path $programs 'Lysdexic TTS.lnk')
+    Write-Ok "created: $programs\Lysdexic TTS.lnk"
     Write-Ok 'press Start and type "lysdexic"'
 } else {
     Write-Ok 'skipped'
 }
 
 # --- Autostart --------------------------------------------------------------
-# Same per-user Run key the tray toggle uses, so the two agree and either one
-# can turn it back off later.
+# A shortcut in the Startup folder, not the HKCU Run key. The Run key is the
+# usual choice and it is what this used to do, but on the development machine
+# Explorer did not act on the entry at three consecutive logons while every
+# other enabled entry in the same key launched normally -- with no error
+# anywhere to explain it. The Startup folder started the app on the first try
+# with no Run entry present at all, so that is what ships.
+#
+# It also has the property the Run key lacked: the user can see it. It is a
+# file in a folder they can open, so "is autostart on?" is answerable by
+# looking, rather than by trusting that a registry write did something.
 Write-Step 'Start with Windows'
 $wantAuto = $false
 if (-not $NoAutostart) {
     $wantAuto = Ask 'Start Lysdexic TTS automatically when you sign in?' $true
 }
 if ($wantAuto) {
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    $value = '"' + $VenvPyw + '" "' + $Launcher + '"'
-    Set-ItemProperty -Path $runKey -Name 'KokoroReader' -Value $value
-    Write-Ok 'enabled (turn it off in the tray menu, or Settings > Apps > Startup)'
+    $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+    New-AppShortcut (Join-Path $startup 'Lysdexic TTS.lnk')
+    Write-Ok "created: $startup\Lysdexic TTS.lnk"
+    Write-Ok 'to turn it off later, delete that shortcut (shell:startup opens the folder)'
 } else {
     Write-Ok 'skipped'
+}
+
+# An earlier version of this installer, and the old tray toggle, wrote a Run
+# key entry. Remove it so a machine that has been through both does not keep a
+# stale value that looks like it should be starting the app.
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+if ((Get-ItemProperty -Path $runKey -Name 'KokoroReader' -ErrorAction SilentlyContinue)) {
+    Remove-ItemProperty -Path $runKey -Name 'KokoroReader' -ErrorAction SilentlyContinue
+    Write-Ok 'removed the old Run key entry'
 }
 
 # --- Done -------------------------------------------------------------------

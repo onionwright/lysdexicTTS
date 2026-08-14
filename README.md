@@ -113,8 +113,27 @@ Run the tests:
 venv\Scripts\python.exe -m pytest tests -q
 ```
 
-**Start with Windows** is offered during install, and stays in the tray menu if
-you'd rather decide later.
+### Starting it automatically when you sign in
+
+`Install.cmd` offers this, and it works by putting a shortcut in your **Startup
+folder**. To do it by hand, or to check whether it is on:
+
+1. Press `Win+R`, type `shell:startup`, press Enter. That opens the folder.
+2. Copy the **Lysdexic TTS** shortcut from the Start menu into it.
+
+Anything in that folder runs when you sign in. To turn it off, delete the
+shortcut. Because it is a file you can see, "is it on?" is answered by opening
+the folder rather than by trusting a setting.
+
+There is deliberately **no "start with Windows" option inside the app**. It used
+to write the standard `HKCU\...\Run` registry value, which is the conventional
+way to do this. On the development machine that entry was correctly written,
+enabled, and simply not acted on by Explorer at three consecutive sign-ins,
+while every other enabled entry in the same key started normally — with nothing
+in any log to explain it. Worse, the app could not tell: a successful registry
+write is not evidence that anything starts, so the checkbox reported success
+either way. A control that cannot detect its own failure is worse than no
+control, so it was removed rather than left to lie.
 
 ### Using it
 
@@ -126,7 +145,7 @@ you'd rather decide later.
 | Jump | Click any sentence in the panel |
 | Panic stop | `Ctrl+Alt+Esc`, registered only while audio is playing |
 | Background sound | Button beside the gear, when keep-alive is on — silences it without stopping the reading |
-| Tray | Read clipboard, show panel, edit settings, autostart, quit |
+| Tray | Read clipboard, show panel, edit settings, quit |
 
 Settings live under tray → *Settings…* — a plain visual window with real
 controls, grouped as Voice, Reading, Selecting text, Text size, Starting up and
@@ -169,10 +188,9 @@ lives at `%APPDATA%\KokoroReader\settings.toml`. It is edited in-app rather than
 shelled out to an external editor because `.toml` has no file association on a
 default Windows install, and Windows 11's tabbed Notepad silently swallows files
 opened from a background process. Logs are at
-`%LOCALAPPDATA%\KokoroReader\logs\`. Those storage paths, the single-instance
-mutex and the autostart registry value deliberately keep the original
-`KokoroReader` name so an existing install keeps its settings and can't leave a
-stale Run entry behind; only the user-facing name changed.
+`%LOCALAPPDATA%\KokoroReader\logs\`. Those storage paths and the single-instance
+mutex deliberately keep the original `KokoroReader` name so an existing install
+keeps its settings; only the user-facing name changed.
 
 ---
 
@@ -221,7 +239,7 @@ raw text
    └─ audio/player.py     sounddevice OutputStream callback + transport
 
 win/  hook · selection · uia · clipboard · keys · capture · window · dpi
-      hotkey · autostart · singleton
+      hotkey · singleton
 ui/   pill · reader_panel · tray · icons · theme
 ```
 
@@ -332,7 +350,7 @@ feels instant.
 - [x] **Phase 2** — tray app, floating panel, live sentence highlighting, transport
 - [x] **Phase 3** — global selection capture: mouse hook, UI Automation,
       clipboard fallback, the Read/Copy pill
-- [x] **Phase 4** — TOML settings, autostart, single instance, logging,
+- [x] **Phase 4** — TOML settings, single instance, logging,
       per-monitor DPI, device-loss recovery, panic hotkey
 
 Not built yet: word-level highlighting — the per-word timings are already

@@ -39,7 +39,7 @@ from .ui.reader_panel import ReaderPanel
 from .ui.settings_dialog import SettingsDialog
 from .ui.settings_window import SettingsWindow
 from .ui.tray import Tray
-from .win import autostart, dpi, shell, singleton
+from .win import dpi, shell, singleton
 from .win import capture as capmod
 from .win import window as winwin
 from .win.hotkey import StopHotkey
@@ -184,7 +184,6 @@ class ReaderApp(QObject):
         self.tray.open_settings.connect(self._on_open_settings)
         self.tray.open_settings_folder.connect(self._on_open_settings_folder)
         self.tray.reload_settings.connect(self._on_manual_reload)
-        self.tray.autostart_toggled.connect(self._on_autostart_toggled)
         self.tray.watcher_toggled.connect(self._on_watcher_toggled)
 
         self.pill.read_clicked.connect(self._on_pill_read)
@@ -414,12 +413,6 @@ class ReaderApp(QObject):
         if self.cfg.get("app", "stop_hotkey_enabled"):
             self.hotkey.register(str(self.cfg.get("app", "stop_hotkey")))
 
-    def _on_autostart_toggled(self, enabled: bool) -> None:
-        ok = autostart.sync(enabled)
-        self.cfg.set("app", "autostart", bool(enabled and ok))
-        configmod.save(self.cfg)
-        self.tray.set_autostart_checked(autostart.is_enabled())
-
     def _on_watcher_toggled(self, enabled: bool) -> None:
         if enabled and not self.watcher.isRunning():
             self.watcher = self._make_watcher()
@@ -522,9 +515,6 @@ class ReaderApp(QObject):
         )
         watch_on = cfg.get("selection", "mode") != "off"
         self.tray.set_watcher_checked(watch_on)
-
-        autostart.sync(bool(cfg.get("app", "autostart")))
-        self.tray.set_autostart_checked(autostart.is_enabled())
 
         if not cfg.get("app", "stop_hotkey_enabled"):
             self.hotkey.unregister()

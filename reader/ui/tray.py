@@ -32,7 +32,6 @@ class Tray(QSystemTrayIcon):
     open_settings = Signal()
     open_settings_folder = Signal()
     reload_settings = Signal()
-    autostart_toggled = Signal(bool)
     watcher_toggled = Signal(bool)
 
     def __init__(self, parent=None) -> None:
@@ -61,11 +60,6 @@ class Tray(QSystemTrayIcon):
         self.act_watch.setChecked(True)
         self.act_watch.toggled.connect(self.watcher_toggled)
         menu.addAction(self.act_watch)
-
-        self.act_autostart = QAction("Start with Windows", menu)
-        self.act_autostart.setCheckable(True)
-        self.act_autostart.toggled.connect(self.autostart_toggled)
-        menu.addAction(self.act_autostart)
 
         act_settings = QAction("Settings…", menu)
         act_settings.triggered.connect(self.open_settings)
@@ -100,11 +94,6 @@ class Tray(QSystemTrayIcon):
 
     def set_reading(self, reading: bool) -> None:
         self.act_stop.setEnabled(reading)
-
-    def set_autostart_checked(self, checked: bool) -> None:
-        self.act_autostart.blockSignals(True)
-        self.act_autostart.setChecked(checked)
-        self.act_autostart.blockSignals(False)
 
     def set_watcher_checked(self, checked: bool) -> None:
         self.act_watch.blockSignals(True)

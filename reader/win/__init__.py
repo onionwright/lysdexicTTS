@@ -1,5 +1,4 @@
 from . import (
-    autostart,
     capture,
     clipboard,
     dpi,
@@ -14,7 +13,6 @@ from . import (
 )
 
 __all__ = [
-    "autostart",
     "capture",
     "clipboard",
     "dpi",

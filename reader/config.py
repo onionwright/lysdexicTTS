@@ -112,7 +112,6 @@ DEFAULTS: Dict[str, Any] = {
         "panel_font_family": "",  # empty = system default sans-serif
     },
     "app": {
-        "autostart": False,
         "log_level": "INFO",
         # Windows 11 files new tray icons into the hidden overflow flyout, so a
         # tray-only app looks like it never started. On the first run we show

@@ -36,11 +36,6 @@ def log_file() -> Path:
     return data_dir() / "logs" / "reader.log"
 
 
-def app_root() -> Path:
-    """Directory containing the reader package (used for the autostart entry)."""
-    return Path(__file__).resolve().parent.parent
-
-
 def ensure_dirs() -> None:
     config_dir().mkdir(parents=True, exist_ok=True)
     (data_dir() / "logs").mkdir(parents=True, exist_ok=True)

@@ -493,11 +493,12 @@ class SettingsWindow(QWidget):
         )
 
     def _page_startup(self, column: QVBoxLayout) -> None:
-        self.autostart_check = self._check(
-            column, "Start automatically when I sign in to Windows",
-            "The app waits quietly in the tray until you select some text.",
-            "app", "autostart",
-        )
+        # No "start with Windows" control here. Writing the HKCU Run value is
+        # easy, but Explorer did not act on it at three consecutive logons on
+        # the development machine while every other enabled entry in the same
+        # key launched normally -- and the app could not tell, because a
+        # successful registry write is not evidence that anything starts.
+        # A Startup-folder shortcut does work; see the README.
         self.notify_check = self._check(
             column, "Show a notification when it is ready",
             "Useful because the tray icon can be hidden behind the ^ arrow.",
@@ -681,9 +682,6 @@ class SettingsWindow(QWidget):
             self.hotkey_check.setChecked(
                 bool(self.cfg.get("app", "stop_hotkey_enabled"))
             )
-            from ..win import autostart
-
-            self.autostart_check.setChecked(autostart.is_enabled())
         finally:
             self._loading = False
         # Rebuilds the dropdowns from disk, so a voice downloaded elsewhere
