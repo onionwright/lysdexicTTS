@@ -50,13 +50,18 @@ KEEPALIVE_SECONDS = 5
 # normally mean by "white noise" -- rain, a fan. Brown falls at 6dB/octave.
 NOISE_COLORS = {"white": 0.0, "pink": 1.0, "brown": 2.0}
 
+# Brown by default: at the same RMS level it is the least perceptible of the
+# three, which is what you want from a signal whose only job is to stop the
+# audio path going to sleep.
+DEFAULT_NOISE_COLOR = "brown"
+
 # Below this the energy is inaudible rumble that does nothing to keep a device
 # awake, and risks pushing DC-ish wander into the output.
 _NOISE_HIGHPASS_HZ = 60.0
 
 
 def _comfort_noise(
-    frames: int, sample_rate: int, color: str = "pink"
+    frames: int, sample_rate: int, color: str = DEFAULT_NOISE_COLOR
 ) -> np.ndarray:
     """Spectrally shaped noise at unit RMS, generated once at startup.
 
@@ -64,7 +69,7 @@ def _comfort_noise(
     looping it is seamless -- no discontinuity at the wrap point.
     """
     n = max(2, int(frames))
-    exponent = NOISE_COLORS.get(color, NOISE_COLORS["pink"])
+    exponent = NOISE_COLORS.get(color, NOISE_COLORS[DEFAULT_NOISE_COLOR])
     rng = np.random.default_rng(20260813)
     spectrum = np.fft.rfft(rng.standard_normal(n))
     freqs = np.fft.rfftfreq(n, d=1.0 / float(sample_rate))
@@ -108,7 +113,7 @@ class StreamPlayer:
         # switching off and on again. Mixing in an inaudible noise floor keeps
         # the path continuously engaged. Precomputed, because the callback must
         # not allocate or call into the RNG.
-        self._noise_color = "pink"
+        self._noise_color = DEFAULT_NOISE_COLOR
         self._noise = _comfort_noise(
             sample_rate * KEEPALIVE_SECONDS, sample_rate, self._noise_color
         )
@@ -257,7 +262,10 @@ class StreamPlayer:
         return 20.0 * math.log10(self._keepalive)
 
     def set_keepalive(
-        self, enabled: bool, level_db: float = -70.0, color: str = "pink"
+        self,
+        enabled: bool,
+        level_db: float = -70.0,
+        color: str = DEFAULT_NOISE_COLOR,
     ) -> None:
         """Hold the audio path open with a near-inaudible noise floor.
 
@@ -269,7 +277,7 @@ class StreamPlayer:
         ``level_db`` is RMS dBFS. ``color`` selects the spectral slope; see
         NOISE_COLORS.
         """
-        color = color if color in NOISE_COLORS else "pink"
+        color = color if color in NOISE_COLORS else DEFAULT_NOISE_COLOR
         if color != self._noise_color:
             # Rebuilt here, never in the audio callback.
             self._noise_color = color

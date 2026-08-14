@@ -56,10 +56,12 @@ DEFAULTS: Dict[str, Any] = {
         # -70 dB RMS is the level measured to hold real hearing aids awake;
         # quieter and some of them still gate off between sentences.
         "keep_alive_db": -70.0,
-        # white | pink | brown. Pink by default: white noise is flat, which
-        # puts most of its energy in the top octaves and sounds like an
-        # electrical buzz. Pink is what people normally mean by white noise.
-        "keep_alive_color": "pink",
+        # white | pink | brown. Brown by default: at the same RMS level it is
+        # the least perceptible of the three, which is the whole point of a
+        # signal that exists only to stop the audio path sleeping. White is
+        # flat, so most of its energy sits in the top octaves and it sounds
+        # like an electrical buzz.
+        "keep_alive_color": "brown",
     },
     "playback": {
         "lookahead_sentences": 3,

@@ -125,12 +125,14 @@ it is never digitally silent. Measured on a 5.4-second read: 0.51 s of digital
 silence across 6 blocks becomes zero, with the speech itself unchanged.
 
 The level is in RMS dBFS and −70 is a good starting point; some devices need
-more signal than others to stay awake. The sound defaults to **pink** noise,
-not white — white noise has a flat spectrum, which puts most of its energy in
-the top octaves and sounds like an electrical buzz. Pink falls at 3 dB/octave
-and is what people usually mean by "white noise": rain, a fan. Brown
-(6 dB/octave) is softer still. The tables are built in the frequency domain, so
-they loop seamlessly and are exactly the requested RMS level.
+more signal than others to stay awake. Three sounds are offered, defaulting to
+**brown** (−6 dB/octave) because at a given level it is the hardest of the three
+to notice, which is exactly what you want from a signal whose only job is to
+stop the audio path going to sleep. Pink (−3 dB/octave) is what people usually
+mean by "white noise" — rain, a fan. Actual white noise is flat, so most of its
+energy sits in the top octaves and it sounds like an electrical buzz; it is
+there if you want it. The tables are built in the frequency domain, so they loop
+seamlessly and land on exactly the requested RMS level.
 
 It stays on while the reading is paused and stopped, deliberately — switching it
 off at those moments would put the gap back exactly where you notice it most.

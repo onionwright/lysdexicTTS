@@ -397,8 +397,8 @@ class SettingsWindow(QWidget):
             column, "What that sound is like",
             "If it sounds harsh or electrical, try a softer one.",
             [
+                ("Deep rumble — softest, hardest to notice", "brown"),
                 ("Steady rain — soft and even", "pink"),
-                ("Deep rumble — softest, like distant wind", "brown"),
                 ("Hiss — bright, like radio static", "white"),
             ],
             "audio", "keep_alive_color",

@@ -175,10 +175,29 @@ def test_changing_colour_rebuilds_the_table_outside_the_callback():
     assert p.callback_error is None
 
 
-def test_unknown_colour_falls_back_to_pink():
+def test_unknown_colour_falls_back_to_the_default():
+    from reader.audio.player import DEFAULT_NOISE_COLOR
+
     p = make_player()
     p.set_keepalive(True, -70.0, "chartreuse")
-    assert p._noise_color == "pink"
+    assert p._noise_color == DEFAULT_NOISE_COLOR
+
+
+def test_the_default_colour_is_the_least_perceptible_one():
+    """Brown carries the least high-frequency energy at a given RMS, which is
+    what makes it hardest to notice -- the whole point of this signal."""
+    from reader.audio.player import DEFAULT_NOISE_COLOR, _comfort_noise
+
+    assert DEFAULT_NOISE_COLOR == "brown"
+
+    def high_frequency_energy(color):
+        signal = _comfort_noise(SR, SR, color)
+        spectrum = np.abs(np.fft.rfft(signal)) ** 2
+        freqs = np.fft.rfftfreq(len(signal), 1 / SR)
+        return float(spectrum[freqs >= 2000].sum() / spectrum.sum())
+
+    brown = high_frequency_energy("brown")
+    assert brown < high_frequency_energy("pink") < high_frequency_energy("white")
 
 
 def test_noise_table_wraps_without_error():
