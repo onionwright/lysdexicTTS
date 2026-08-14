@@ -1,7 +1,7 @@
-# Lysdexic TTS
+# Lysdexic TTS — text-to-speech for dyslexic readers
 
-Select-anywhere streaming text-to-speech for Windows, built on
-[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M).
+Select-anywhere streaming text-to-speech for Windows, built for dyslexic
+readers on top of [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M).
 
 Highlight text in **any** application and a small pill appears next to it with
 **Read** and **Copy**. Press Read and it starts speaking in about a second,
@@ -11,10 +11,10 @@ highlighted, and transport controls stay visible the whole time.
 
 No copying into a separate window. No right-click menu to hunt for.
 
-Built for dyslexic readers, which shapes the whole interface: adjustable text
-size and line spacing in the reading window, a sentence highlight that tracks
-the voice so you never lose your place, and settings written as plain sentences
-with ordinary controls rather than configuration syntax.
+That focus shapes the whole interface: adjustable text size and line spacing
+in the reading window, a sentence highlight that tracks the voice so you never
+lose your place, and settings written as plain sentences with ordinary
+controls rather than configuration syntax.
 
 ---
 
