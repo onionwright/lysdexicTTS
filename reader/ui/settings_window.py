@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -42,6 +43,7 @@ from PySide6.QtWidgets import (
 
 from .. import APP_NAME, config as configmod, paths
 from ..tts.kokoro_engine import KNOWN_VOICES
+from .palette import HIGHLIGHT, PAPER, ReadingColors
 from .theme import THEME
 
 log = logging.getLogger(__name__)
@@ -175,6 +177,9 @@ class SettingsWindow(QWidget):
         self.engine = engine
         self.cfg = configmod.load()
         self._loading = False
+        # (section, key) -> {hex: button}, so _load_values can restore which
+        # swatch is ringed without the buttons having to know about config.
+        self._swatch_buttons: dict = {}
 
         # Saving is debounced so dragging a slider doesn't rewrite the file on
         # every pixel of movement.
@@ -221,6 +226,7 @@ class SettingsWindow(QWidget):
         self._add_page("Reading", self._page_reading)
         self._add_page("Selecting text", self._page_selection)
         self._add_page("Text Settings", self._page_appearance)
+        self._add_page("Colours", self._page_colors)
         self._add_page("Starting up", self._page_startup)
         self._add_page("Advanced", self._page_advanced)
 
@@ -334,6 +340,67 @@ class SettingsWindow(QWidget):
         line.addStretch(1)
         holder.addLayout(line)
         return slider
+
+    def _swatches(
+        self, column: QVBoxLayout, name: str, help_text: str,
+        group: List[tuple], section: str, key: str, per_row: int = 5,
+    ) -> None:
+        """A grid of colour swatches, each labelled in plain words.
+
+        Deliberately not a colour wheel. A wheel puts an unreadable choice one
+        drag away and asks the reader to judge contrast by eye -- which is the
+        one judgement this app should be making for them, not delegating.
+        """
+        holder = self._row(column, name, help_text)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 4, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+
+        buttons = {}
+        for i, (label, value) in enumerate(group):
+            cell = QWidget()
+            stack = QVBoxLayout(cell)
+            stack.setContentsMargins(0, 0, 0, 0)
+            stack.setSpacing(4)
+
+            button = QPushButton()
+            button.setCheckable(True)
+            button.setFixedSize(58, 42)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setToolTip(label)
+            button.setStyleSheet(_swatch_qss(value))
+            button.clicked.connect(
+                lambda _checked=False, s=section, k=key, v=value:
+                self._pick_swatch(s, k, v)
+            )
+            stack.addWidget(button, 0, Qt.AlignmentFlag.AlignHCenter)
+
+            caption = QLabel(label)
+            caption.setObjectName("settingHelp")
+            caption.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            stack.addWidget(caption)
+
+            grid.addWidget(cell, i // per_row, i % per_row)
+            buttons[value] = button
+
+        grid.setColumnStretch(per_row, 1)
+        holder.addLayout(grid)
+        self._swatch_buttons[(section, key)] = buttons
+
+    def _pick_swatch(self, section: str, key: str, value: str) -> None:
+        self._check_swatch(section, key, value)
+        self._set(section, key, value)
+
+    def _check_swatch(self, section: str, key: str, value: str) -> None:
+        """Ring exactly one swatch. Not QButtonGroup's autoExclusive, because
+        that cannot express 'none of these' when the settings file holds a
+        colour that is not in the grid."""
+        buttons = self._swatch_buttons.get((section, key), {})
+        target = str(value).strip().lower()
+        for swatch, button in buttons.items():
+            button.setChecked(swatch == target)
 
     # --------------------------------------------------------------- pages
 
@@ -492,6 +559,39 @@ class SettingsWindow(QWidget):
             "ui", "show_panel_on_read",
         )
 
+    def _page_colors(self, column: QVBoxLayout) -> None:
+        self._swatches(
+            column, "Paper colour",
+            "The background behind the reading text. Tinted paper helps many "
+            "people who find black on white unsteady to look at — which colour "
+            "helps is personal, so try a few.",
+            PAPER, "colors", "page_tint",
+        )
+        self._divider(column)
+        self._swatches(
+            column, "Highlight colour",
+            "The sentence being read aloud. These stay easy to tell apart if "
+            "you are colour blind.",
+            HIGHLIGHT, "colors", "highlight",
+        )
+
+        self._divider(column)
+        holder = self._row(column, "Preview", "")
+        self.color_preview = QLabel()
+        self.color_preview.setWordWrap(True)
+        self.color_preview.setTextFormat(Qt.TextFormat.RichText)
+        self.color_preview.setMinimumHeight(96)
+        holder.addWidget(self.color_preview)
+
+        # Always present rather than only on failure. Nothing reachable from
+        # the grids above is unreadable, so a warning that only appeared on
+        # trouble would never appear at all -- and would then be untrustworthy
+        # on the day a hand-edited settings file did make trouble.
+        self.contrast_label = QLabel("")
+        self.contrast_label.setObjectName("settingHelp")
+        self.contrast_label.setWordWrap(True)
+        column.addWidget(self.contrast_label)
+
     def _page_startup(self, column: QVBoxLayout) -> None:
         # No "start with Windows" control here. Writing the HKCU Run value is
         # easy, but Explorer did not act on it at three consecutive logons on
@@ -645,6 +745,9 @@ class SettingsWindow(QWidget):
             )
             _select_data(self.device_box, self.cfg.get("audio", "device") or "")
 
+            for section, key in (("colors", "page_tint"), ("colors", "highlight")):
+                self._check_swatch(section, key, str(self.cfg.get(section, key)))
+
             for slider, section, key in (
                 (self.speed_slider, "engine", "speed"),
                 (self.volume_slider, "audio", "volume"),
@@ -716,6 +819,41 @@ class SettingsWindow(QWidget):
         self.preview.setFont(font)
         spacing = float(self.cfg.get("ui", "panel_line_spacing"))
         self.preview.setMinimumHeight(int(font.pointSize() * spacing * 4.4))
+        self._update_color_preview()
+
+    def _update_color_preview(self) -> None:
+        """Show the paper and the highlight together, at the size they will
+        actually be read at. Judging either one on its own is the mistake this
+        preview exists to prevent."""
+        if not hasattr(self, "color_preview"):
+            return
+        colors = ReadingColors(
+            str(self.cfg.get("colors", "highlight")),
+            str(self.cfg.get("colors", "page_tint")),
+        )
+        font_pt = int(self.cfg.get("ui", "panel_font_pt"))
+        spacing = float(self.cfg.get("ui", "panel_line_spacing"))
+
+        self.color_preview.setStyleSheet(
+            f"background: {colors.page};"
+            f"border: 1px solid {colors.edge}; border-radius: 8px;"
+            f"padding: 14px; font-size: {font_pt}pt;"
+            f"line-height: {int(spacing * 100)}%;"
+        )
+        self.color_preview.setText(
+            f'<span style="color:{colors.body_text}">'
+            "This is what your reading text will look like. </span>"
+            f'<span style="background-color:{colors.highlight};'
+            f'color:{colors.spoken_text}">'
+            "And this is the sentence being read aloud.</span>"
+            f'<span style="color:{colors.body_text}"> '
+            "The rest carries on afterwards.</span>"
+        )
+
+        self.contrast_label.setText(
+            f"Highlight: {_describe_contrast(colors.highlight_contrast)}. "
+            f"Reading text: {_describe_contrast(colors.body_contrast)}."
+        )
 
     def _restore_defaults(self) -> None:
         from PySide6.QtWidgets import QMessageBox
@@ -748,6 +886,36 @@ class SettingsWindow(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+
+
+def _swatch_qss(color: str) -> str:
+    """One swatch button. Padding and min-width are reset explicitly because
+    WINDOW_QSS styles every QPushButton in this window as a text button."""
+    return f"""
+QPushButton {{
+    background: {color};
+    border: 2px solid {THEME.panel_border};
+    border-radius: 8px;
+    padding: 0px;
+    min-width: 0px;
+}}
+QPushButton:hover {{ border-color: {THEME.text}; }}
+QPushButton:checked {{ border: 3px solid {THEME.accent}; }}
+"""
+
+
+def _describe_contrast(ratio: float) -> str:
+    """A contrast ratio in words. '4.8:1' is not a thing anyone should have to
+    interpret to choose a colour."""
+    if ratio >= 7.0:
+        word = "easy to read"
+    elif ratio >= 4.5:
+        word = "clear"
+    elif ratio >= 3.0:
+        word = "faint — may be hard work"
+    else:
+        word = "too faint to read comfortably"
+    return f"{word} ({ratio:.1f}:1)"
 
 
 def _describe_db(value: float) -> str:

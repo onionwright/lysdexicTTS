@@ -120,7 +120,12 @@ def _path(shape: str, r: QRectF) -> QPainterPath:
 
 
 class IconButton(QAbstractButton):
-    """Flat, hover-lit button that paints a vector glyph."""
+    """Flat, hover-lit button that paints a vector glyph.
+
+    Colours default to the fixed chrome theme. The reader panel overrides them,
+    because its header follows the user's paper colour and a grey glyph on cream
+    paper is very close to no glyph at all.
+    """
 
     def __init__(self, shape: str, tooltip: str = "", size: int = 30, parent=None):
         super().__init__(parent)
@@ -132,10 +137,26 @@ class IconButton(QAbstractButton):
         if tooltip:
             self.setToolTip(tooltip)
 
+        self._ink = THEME.text_dim       # at rest
+        self._ink_lit = THEME.text       # under the pointer
+        self._ink_down = THEME.accent    # pressed
+        self._hover_bg = THEME.button_hover
+        self._down_bg = THEME.button_down
+
     def set_shape(self, shape: str) -> None:
         if shape != self.shape_name:
             self.shape_name = shape
             self.update()
+
+    def set_colors(
+        self, ink: str, ink_lit: str, ink_down: str, hover_bg: str, down_bg: str
+    ) -> None:
+        self._ink = ink
+        self._ink_lit = ink_lit
+        self._ink_down = ink_down
+        self._hover_bg = hover_bg
+        self._down_bg = down_bg
+        self.update()
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
@@ -143,20 +164,20 @@ class IconButton(QAbstractButton):
         rect = self.rect()
 
         if not self.isEnabled():
-            color = QColor(THEME.text_dim)
+            color = QColor(self._ink)
             color.setAlpha(90)
         elif self.isDown():
-            p.setBrush(QColor(THEME.button_down))
+            p.setBrush(QColor(self._down_bg))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(rect, 6, 6)
-            color = QColor(THEME.accent)
+            color = QColor(self._ink_down)
         elif self.underMouse():
-            p.setBrush(QColor(THEME.button_hover))
+            p.setBrush(QColor(self._hover_bg))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(rect, 6, 6)
-            color = QColor(THEME.text)
+            color = QColor(self._ink_lit)
         else:
-            color = QColor(THEME.text_dim)
+            color = QColor(self._ink)
 
         g = self._glyph
         box = QRectF(

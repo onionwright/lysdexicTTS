@@ -504,6 +504,10 @@ class ReaderApp(QObject):
             float(cfg.get("ui", "panel_line_spacing")),
             str(cfg.get("ui", "panel_font_family") or ""),
         )
+        self.panel.set_colors(
+            str(cfg.get("colors", "highlight")),
+            str(cfg.get("colors", "page_tint")),
+        )
 
         self.pill.auto_hide_ms = int(cfg.get("selection", "pill_auto_hide_ms"))
         self.watcher.set_mode(cfg.get("selection", "mode"))

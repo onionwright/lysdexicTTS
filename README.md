@@ -157,6 +157,24 @@ Generous type and loose line spacing are among the few interventions with real
 evidence behind them for dyslexic readers, so they get their own page with a
 live preview.
 
+**Reading colours** (Colours page) are two choices, not four. You pick the paper
+and the highlight; the text colour, the header, the panel edge and the muted wash
+over captured text are all derived from those. That is deliberate — four colour
+pickers is four chances to build something unreadable, and the person most likely
+to be hurt by that is exactly the person this is for. Every one of the 90
+combinations the two grids can produce clears WCAG AA, and there is a test that
+fails if that ever stops being true.
+
+Paper offers the pale tint set from coloured-overlay practice — cream, peach,
+rose, mint, sky, lilac and the rest — because tinted paper is one of the few
+interventions with real evidence behind it for readers who find black on white
+unstable, and *which* tint helps is individual. Highlight offers the Okabe-Ito
+palette, which stays distinguishable under deuteranopia, protanopia and
+tritanopia. There is no colour wheel: a wheel puts an unreadable choice one drag
+away and asks you to judge contrast by eye, which is the one judgement this app
+should be making for you. The preview shows both colours together at your real
+reading size, with the measured contrast described in words underneath.
+
 **Keep the sound connection open** (Voice page) is for hearing aids, Bluetooth
 headphones, and anything with noise cancelling. The pauses between sentences are
 exact digital zeros, and some devices read a run of zeros as "no signal" and gate

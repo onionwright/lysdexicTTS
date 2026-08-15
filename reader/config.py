@@ -63,6 +63,16 @@ DEFAULTS: Dict[str, Any] = {
         # like an electrical buzz.
         "keep_alive_color": "brown",
     },
+    "colors": {
+        # The two colours the reader panel is built from. Everything else --
+        # text colour, the header strip, the panel edge, the muted wash over
+        # captured text -- is derived from these in reader/ui/palette.py, so a
+        # combination that cannot be read is not reachable from the settings
+        # window. Tinted paper is standard practice for readers who find
+        # black-on-white unstable, and which tint helps is individual.
+        "highlight": "#2f5aa8",  # the sentence being spoken
+        "page_tint": "#23262e",  # behind the reading text
+    },
     "playback": {
         "lookahead_sentences": 3,
         "cache_max_seconds": 300,

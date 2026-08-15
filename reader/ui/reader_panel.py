@@ -41,7 +41,8 @@ from .. import APP_NAME
 from ..text.types import Sentence
 from ..win import window as winwin
 from .icons import IconButton
-from .theme import PANEL_QSS, THEME
+from .palette import ReadingColors, mix
+from .theme import DEFAULT_COLORS, THEME, panel_qss
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +69,12 @@ class ReaderPanel(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.setStyleSheet(PANEL_QSS)
         self.resize(560, 420)
         self.setMinimumSize(360, 200)
+
+        # Reading colours. Everything the panel paints comes from these, so
+        # they have to exist before _build() runs.
+        self._colors = DEFAULT_COLORS
 
         self._sentences: List[Sentence] = []
         self._current = -1
@@ -83,6 +87,7 @@ class ReaderPanel(QWidget):
         self._font_family = ""
 
         self._build()
+        self._apply_colors()
 
     # ------------------------------------------------------------------ ui
 
@@ -158,21 +163,56 @@ class ReaderPanel(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        p.setBrush(QColor(THEME.panel_bg))
-        p.setPen(QColor(THEME.panel_border))
+        p.setBrush(QColor(self._colors.page))
+        p.setPen(QColor(self._colors.edge))
         p.drawRoundedRect(r, THEME.radius, THEME.radius)
         # Header strip, with the top corners following the panel radius.
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(THEME.header_bg))
+        p.setBrush(QColor(self._colors.header))
         hr = QRectF(r.x(), r.y(), r.width(), 44)
         p.save()
         p.setClipRect(hr)
         p.drawRoundedRect(r, THEME.radius, THEME.radius)
         p.restore()
-        p.setPen(QColor(THEME.panel_border))
+        p.setPen(QColor(self._colors.edge))
         p.drawLine(int(r.x()), 44, int(r.right()), 44)
 
     # ------------------------------------------------------------- content
+
+    def set_colors(self, highlight: str, page_tint: str) -> None:
+        """Set the two reading colours; everything else derives from them.
+
+        Safe to call mid-read: it repaints, it does not touch playback or the
+        document, and the sentence currently being spoken keeps its highlight
+        rather than waiting for the next boundary to pick up the new colour.
+        """
+        self._colors = ReadingColors(highlight, page_tint)
+        self._apply_colors()
+
+    @property
+    def colors(self) -> ReadingColors:
+        return self._colors
+
+    def _apply_colors(self) -> None:
+        c = self._colors
+        self.setStyleSheet(panel_qss(c))
+        # Header glyphs live on the paper colour too, so they cannot keep the
+        # fixed chrome greys -- on cream paper those are nearly invisible.
+        for button in (
+            self.btn_prev, self.btn_play, self.btn_next, self.btn_stop,
+            self.btn_noise, self.btn_settings, self.btn_close,
+        ):
+            button.set_colors(
+                c.dim_text, c.body_text, c.highlight,
+                mix(c.header, c.body_text, 0.10),
+                mix(c.header, c.body_text, 0.18),
+            )
+        # The wash carries a colour, so it is stale the moment the paper
+        # changes; rebuilding it is cheap next to re-reading the document.
+        if self._sentences:
+            self._build_wash()
+        self._apply_highlight(self._current)
+        self.update()
 
     def set_typography(
         self, font_pt: int, line_spacing: float, family: str = ""
@@ -260,7 +300,7 @@ class ReaderPanel(QWidget):
         doc = self.text.document()
         doc_end = doc.characterCount() - 1
         fmt = QTextCharFormat()
-        fmt.setBackground(QColor(THEME.captured_bg))
+        fmt.setBackground(QColor(self._colors.wash))
         for s in self._sentences:
             sel = QTextEdit.ExtraSelection()
             sel.format = fmt
@@ -281,8 +321,8 @@ class ReaderPanel(QWidget):
             s = self._sentences[index]
             speaking = QTextEdit.ExtraSelection()
             fmt = QTextCharFormat()
-            fmt.setBackground(QColor(THEME.speaking_bg))
-            fmt.setForeground(QColor(THEME.speaking_fg))
+            fmt.setBackground(QColor(self._colors.highlight))
+            fmt.setForeground(QColor(self._colors.spoken_text))
             speaking.format = fmt
             cur = QTextCursor(self.text.document())
             cur.setPosition(max(0, min(s.char_start, doc_end)))
