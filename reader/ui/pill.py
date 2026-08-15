@@ -38,7 +38,7 @@ Point = Tuple[int, int]
 Rect = Tuple[int, int, int, int]  # left, top, right, bottom
 
 # Where the pill sits.
-ANCHOR_SELECTION = "selection"              # under the selection's own rectangle
+ANCHOR_SELECTION = "selection"              # under the selection, at the release
 ANCHOR_SELECTION_START = "selection_start"  # where the drag began
 ANCHOR_SELECTION_END = "selection_end"      # where the drag ended
 ANCHOR_MOUSE = "mouse"                      # wherever the pointer is now
@@ -112,7 +112,8 @@ def reference_point(
     if anchor == ANCHOR_SELECTION_START:
         return start or end or cursor or (0, 0)
     if anchor == ANCHOR_SELECTION and rect is not None:
-        return (rect[0], rect[3])
+        release = end or cursor
+        return ((release[0] if release is not None else rect[0]), rect[3])
     return end or cursor or start or (0, 0)
 
 
@@ -135,6 +136,9 @@ def place_pill(
     The selection anchor degrades to the release point when that happens, which
     is what the pill has always done; the difference now is that it is a
     fallback rather than the only behaviour.
+
+    ``end`` is where the mouse was released. Two anchors use it: ``selection``
+    for its horizontal position only, and ``selection_end`` for both.
     """
     w, h = size
     _left, _top, right, bottom = work_area
@@ -149,7 +153,17 @@ def place_pill(
 
     if anchor == ANCHOR_SELECTION and rect is not None:
         sel_left, sel_top, _sel_right, sel_bottom = rect
-        x = sel_left + off_x
+        # Vertically from the selection -- clear of the last line, so the pill
+        # never covers the text it is offering to read. Horizontally from where
+        # the mouse was let go, which is where the hand already is.
+        #
+        # Not the selection's left edge: that rectangle is the union of the
+        # selected text, so on a wide sweep its left edge is where the drag
+        # *began* and the button lands a screen away from the pointer that just
+        # finished the gesture. For a short selection the two are the same
+        # place anyway.
+        release = end or cursor
+        x = (release[0] if release is not None else sel_left) + off_x
         if above:
             y = sel_top - h - off_y
         else:

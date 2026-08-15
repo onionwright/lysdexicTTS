@@ -157,13 +157,21 @@ save as you make them.
 button appears and when it goes away are the sort of thing that is either
 invisible or maddening, with very little in between.
 
-It can sit beside the selected text, at the point where you *started* dragging,
-at the point where you finished, wherever the pointer is, or pinned to the
+It can sit below the selected text, at the point where you *started* dragging, at
+the point where you finished, wherever the pointer is, or pinned to the
 bottom-right corner by the clock — and above rather than below, nudged by however
-many pixels you like. The first of those needs the application to report where
-your selection actually is; Electron apps and several PDF viewers do not, and
-there it falls back to where you finished dragging. That fallback used to be the
-only behaviour the pill had.
+many pixels you like.
+
+The default takes its two coordinates from different places on purpose: *below*
+the selection's last line, so the button never covers the text it is offering to
+read, but *across* at wherever you released the mouse, because that is where your
+hand already is. Anchoring both to the selection's rectangle is the obvious
+implementation and it is wrong — that rectangle is the union of the selected
+text, so its left edge is where the drag *began*, and sweeping across a line puts
+the button a screen away from the pointer that just finished the gesture. For a
+short selection the two are the same place anyway. This mode needs the
+application to report where your selection is; Electron apps and several PDF
+viewers do not, and there it falls back to the release point entirely.
 
 Three ways for it to go away, and they are independent because people want
 different combinations: a timer, a click somewhere else, and the pointer moving
@@ -174,13 +182,12 @@ as everyone else's, and without that check pressing **Read** would dismiss the
 pill out from under the press.
 
 The move-away rule measures from the button *and* from where your pointer was
-when the button appeared. That is not fussiness. The pill routinely opens a long
-way from your pointer: drag-select a wide line and the selection's bounding
-rectangle begins where you *started*, so an anchor tied to that rectangle lands
-at one end of the sweep while your hand is at the other. Measuring to the button
-alone means it is already "far away" the moment it appears and it dies without
-you having moved — and it also means moving over to press the thing dismisses it
-on the way. Covering both ends, and the corridor between them, is what makes the
+when the button appeared. That is not fussiness: several anchors put the pill a
+long way from your hand quite legitimately — the corner one always does, and
+"where I started selecting" does on every wide sweep. Measuring to the button
+alone means it is already "far away" the moment it appears, so it dies without
+you having moved at all; it also means walking over to press the thing dismisses
+it on the way. Covering both ends and the corridor between them is what makes the
 rule mean "you moved away" rather than "it opened over there".
 
 The move-away rule polls the cursor on a timer rather than watching the mouse

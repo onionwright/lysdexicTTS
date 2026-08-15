@@ -49,8 +49,37 @@ def place(anchor, **kw):
 # ------------------------------------------------------------------ anchors
 
 
-def test_selection_anchor_sits_under_the_selection():
-    assert place(ANCHOR_SELECTION) == (400, 330)
+def test_selection_anchor_is_under_the_text_and_beside_the_release():
+    """Vertically clear of the last line so it never covers what it is offering
+    to read; horizontally where the hand already is."""
+    assert place(ANCHOR_SELECTION) == (END[0], RECT[3])
+
+
+def test_selection_anchor_does_not_land_at_the_far_end_of_a_sweep():
+    """Regression: the selection rectangle is the union of the selected text,
+    so its left edge is where the drag *began*. Anchoring to that put the
+    button a screen away from the pointer that had just finished the gesture."""
+    wide = (200, 500, 1700, 530)
+    released_at = (1700, 520)
+    x, y = place(ANCHOR_SELECTION, rect=wide, start=(200, 515), end=released_at)
+    assert x == released_at[0], "must follow the release, not the left edge"
+    assert y == wide[3], "and still sit below the last line"
+
+
+def test_a_backwards_selection_follows_the_release_too():
+    """Selecting right-to-left ends on the left, and that is where the hand
+    is."""
+    wide = (200, 500, 1700, 530)
+    x, _y = place(ANCHOR_SELECTION, rect=wide, start=(1700, 515), end=(200, 520))
+    assert x == 200
+
+
+def test_selection_anchor_matches_the_others_for_a_short_selection():
+    """The change only shows up on wide selections; for a few words the left
+    edge and the release are the same place."""
+    short = (400, 300, 460, 330)
+    x, _y = place(ANCHOR_SELECTION, rect=short, start=(400, 315), end=(455, 320))
+    assert abs(x - short[0]) < 60
 
 
 def test_selection_start_and_end_are_different_places():
@@ -58,6 +87,14 @@ def test_selection_start_and_end_are_different_places():
     assert place(ANCHOR_SELECTION_START)[0] == START[0]
     assert place(ANCHOR_SELECTION_END)[0] == END[0]
     assert place(ANCHOR_SELECTION_START) != place(ANCHOR_SELECTION_END)
+
+
+def test_selection_and_selection_end_still_differ_vertically():
+    """Otherwise the two anchors would be the same setting under two names."""
+    under = place(ANCHOR_SELECTION)
+    at_end = place(ANCHOR_SELECTION_END)
+    assert under[0] == at_end[0]
+    assert under[1] != at_end[1], "one clears the last line, one sits at the pointer"
 
 
 def test_mouse_anchor_follows_the_pointer():
@@ -167,7 +204,7 @@ def test_reference_point_picks_the_monitor_the_pill_will_land_on():
     assert reference_point(ANCHOR_MOUSE, RECT, START, END, CURSOR) == CURSOR
     assert reference_point(ANCHOR_SELECTION_START, RECT, START, END, CURSOR) == START
     assert reference_point(ANCHOR_SELECTION_END, RECT, START, END, CURSOR) == END
-    assert reference_point(ANCHOR_SELECTION, RECT, START, END, CURSOR) == (400, 330)
+    assert reference_point(ANCHOR_SELECTION, RECT, START, END, CURSOR) == (700, 330)
     assert reference_point(ANCHOR_SELECTION, None, START, END, CURSOR) == END
 
 

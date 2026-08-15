@@ -529,7 +529,7 @@ class SettingsWindow(QWidget):
             "when that happens the first choice falls back to where you "
             "finished selecting.",
             [
-                ("Beside the text I selected", "selection"),
+                ("Below the text, where I let go", "selection"),
                 ("Where I started selecting", "selection_start"),
                 ("Where I finished selecting", "selection_end"),
                 ("Wherever the mouse pointer is", "mouse"),
