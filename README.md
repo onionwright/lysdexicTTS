@@ -290,6 +290,18 @@ and fade-in all complete inside one callback.
 - **Pause never stops the device.** WASAPI stop/start is audible and costs
   50–150 ms to resume, so pausing writes silence with the stream running.
 - **Starvation degrades to silence, not to a stopped stream.**
+- **The output follows the system default.** A stream is bound to the endpoint
+  it was opened on, and PortAudio's idea of "the default" is a snapshot taken
+  when the process started — so following Windows is something the reader has
+  to do deliberately. The default endpoint is read from Core Audio once a
+  second, and when it moves, the stream is closed, PortAudio is re-enumerated
+  and the stream reopens on the new device with the position preserved. This is
+  what makes hearing aids that pair a few seconds after sign-in work: without
+  it, autostarting the reader means it opens the device on whatever was default
+  at boot — a television over HDMI, typically — and stays there for the life of
+  the process while every other app has already followed. Picking a device
+  explicitly in settings turns the following off; that choice means that
+  device.
 - **Previous** restarts the current sentence if you're more than 2 s in — the
   rule every music player uses, because reaching for "back" usually means "say
   that again".
@@ -351,7 +363,8 @@ feels instant.
 - [x] **Phase 3** — global selection capture: mouse hook, UI Automation,
       clipboard fallback, the Read/Copy pill
 - [x] **Phase 4** — TOML settings, single instance, logging,
-      per-monitor DPI, device-loss recovery, panic hotkey
+      per-monitor DPI, device-loss recovery, default-device following,
+      panic hotkey
 
 Not built yet: word-level highlighting — the per-word timings are already
 computed and kept on every chunk, so it is mostly UI work.

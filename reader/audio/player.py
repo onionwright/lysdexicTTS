@@ -60,6 +60,44 @@ DEFAULT_NOISE_COLOR = "brown"
 _NOISE_HIGHPASS_HZ = 60.0
 
 
+def _default_endpoint_id() -> Optional[str]:
+    """Id of the endpoint Windows currently calls the default output.
+
+    Imported lazily and behind a catch-all: this is a nicety, and nothing about
+    playing audio should fail because COM did.
+    """
+    try:
+        from ..win.audiodev import default_output_id
+
+        return default_output_id()
+    except Exception:
+        return None
+
+
+def _rescan_devices() -> None:
+    """Make PortAudio re-enumerate the machine's audio devices.
+
+    PortAudio builds its device list once, at ``Pa_Initialize``, and the index
+    it calls "the default output" is part of that snapshot. There is no public
+    refresh, so reopening on a device that appeared (or became default) after
+    startup means tearing the library down and bringing it back up. That is
+    only safe with every stream closed, which is why the only caller is
+    :meth:`StreamPlayer.reopen`, between its close and its open.
+    """
+    import sounddevice as sd
+
+    try:
+        sd._terminate()
+    except Exception:
+        # Nothing was torn down, so the library is still in a usable state and
+        # reopening on the stale device list is better than not reopening.
+        log.debug("could not terminate PortAudio for a device rescan", exc_info=True)
+        return
+    # Deliberately not guarded: if this fails there is no audio at all, and the
+    # caller's next attempt is the recovery path.
+    sd._initialize()
+
+
 def _comfort_noise(
     frames: int, sample_rate: int, color: str = DEFAULT_NOISE_COLOR
 ) -> np.ndarray:
@@ -147,6 +185,9 @@ class StreamPlayer:
 
         self._stream = None
         self._open_lock = threading.Lock()
+        # Endpoint the open stream is bound to, so a later default change can be
+        # spotted. Only meaningful while following the default (device is None).
+        self._opened_on: Optional[str] = None
 
     # -------------------------------------------------------------- playlist
 
@@ -316,6 +357,7 @@ class StreamPlayer:
                 callback=self._callback,
             )
             self._stream.start()
+            self._opened_on = _default_endpoint_id()
             log.debug(
                 "output stream open (device=%s, blocksize=%d, latency=%s)",
                 self.device, self.blocksize, self.latency,
@@ -324,10 +366,28 @@ class StreamPlayer:
     def is_device_alive(self) -> bool:
         return self._stream is not None and self._stream.active
 
-    def reopen(self) -> None:
-        """Recover after device loss (Bluetooth drop, dock undock).
+    def default_device_changed(self) -> bool:
+        """True when Windows has moved the default output somewhere other than
+        where the open stream is playing.
 
-        Position is preserved, so resuming costs one fade-in and nothing else.
+        A stream stays on the endpoint it was opened on for as long as it lives,
+        so following the system default is something this has to do on purpose.
+        An unreadable default reads as "no change": leaving the stream where it
+        is beats tearing the audio down on a failed COM call.
+        """
+        if self.device is not None or self._stream is None:
+            return False
+        if self._opened_on is None:
+            return False
+        current = _default_endpoint_id()
+        return current is not None and current != self._opened_on
+
+    def reopen(self) -> None:
+        """Move to the current default device.
+
+        Covers both device loss (Bluetooth drop, dock undock) and the default
+        simply moving under us. Position is preserved, so it costs one fade-in
+        and nothing else.
         """
         idx, pos, paused = self.cur_index, self.pos, self._paused
         with self._open_lock:
@@ -337,6 +397,10 @@ class StreamPlayer:
                 except Exception:
                     pass
                 self._stream = None
+            # Between the close and the open, the only window in which PortAudio
+            # can safely be restarted -- and without restarting it, reopening
+            # would land right back on the device that was default at startup.
+            _rescan_devices()
         self._ensure_stream()
         self.cur_index, self.pos = idx, pos
         if not paused:

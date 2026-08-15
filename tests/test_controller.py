@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from reader.audio.player import StreamPlayer  # noqa: E402
 from reader.core.cache import AudioCache  # noqa: E402
+import reader.core.controller as controller_mod  # noqa: E402
 from reader.core.controller import ReaderController  # noqa: E402
 from reader.text.splitter import SentenceSplitter  # noqa: E402
 from reader.tts.base import SynthChunk, TtsEngine  # noqa: E402
@@ -117,6 +118,41 @@ def test_voice_change_without_a_document_just_records_it(ctl):
     assert ctl.set_voice_and_speed("bm_george", 1.0) is True
     assert ctl.voice == "bm_george"
     assert not ctl.has_document
+
+
+def test_tick_follows_the_default_output_device(ctl):
+    """Regression: hearing aids that connect after the app started were ignored
+    for as long as the process lived, because a stream stays on the endpoint it
+    was opened on."""
+    reopened = []
+    ctl.player.is_device_alive = lambda: True
+    ctl.player.default_device_changed = lambda: True
+    ctl.player.reopen = lambda: reopened.append(True)
+
+    ctl.tick()
+    assert reopened == [True]
+
+    ctl.tick()  # same second: polling Windows 30 times a second buys nothing
+    assert reopened == [True]
+
+    ctl._last_device_poll -= controller_mod.DEVICE_POLL_S
+    ctl.tick()
+    assert reopened == [True, True]
+
+
+def test_a_failed_reopen_does_not_take_the_tick_down(ctl):
+    """tick() drives the whole UI; an unplugged device must not stop it."""
+    ctl.player.is_device_alive = lambda: True
+    ctl.player.default_device_changed = lambda: True
+
+    def boom():
+        raise RuntimeError("no such device")
+
+    ctl.player.reopen = boom
+    ctl.read(TEXT, autoplay=False)
+
+    state = ctl.tick()
+    assert state.total_sentences >= 3
 
 
 if __name__ == "__main__":

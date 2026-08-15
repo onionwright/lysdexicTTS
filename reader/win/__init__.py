@@ -1,4 +1,5 @@
 from . import (
+    audiodev,
     capture,
     clipboard,
     dpi,
@@ -13,6 +14,7 @@ from . import (
 )
 
 __all__ = [
+    "audiodev",
     "capture",
     "clipboard",
     "dpi",

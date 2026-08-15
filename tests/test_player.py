@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import reader.audio.player as player_mod  # noqa: E402
 from reader.audio.player import StreamPlayer  # noqa: E402
 
 SR = 24000
@@ -187,6 +188,53 @@ def test_jump_after_finishing_clears_finished():
     pull(p)
     assert p.cur_index == 1
     assert not p.finished
+
+
+class FakeStream:
+    """Stands in for an open sounddevice stream. Only truthiness and ``active``
+    are ever looked at outside the callback."""
+
+    active = True
+
+
+def test_default_device_change_is_noticed(monkeypatch):
+    """Regression: the reader kept playing to whatever was default when it
+    started. Autostart made that reliably wrong -- it opens the device at
+    sign-in, and hearing aids finish pairing seconds later."""
+    p = make_player()
+    p._stream = FakeStream()
+    p._opened_on = "endpoint-tv"
+    monkeypatch.setattr(player_mod, "_default_endpoint_id", lambda: "endpoint-aids")
+    assert p.default_device_changed()
+
+
+def test_a_pinned_device_is_never_second_guessed(monkeypatch):
+    """Choosing a device explicitly means that device, not whatever Windows
+    currently prefers."""
+    p = make_player()
+    p._stream = FakeStream()
+    p._opened_on = "endpoint-tv"
+    p.device = "Speakers (USB Audio)"
+    monkeypatch.setattr(player_mod, "_default_endpoint_id", lambda: "endpoint-aids")
+    assert not p.default_device_changed()
+
+
+@pytest.mark.parametrize("current", [None, "endpoint-tv"])
+def test_no_answer_and_no_change_both_leave_the_stream_alone(monkeypatch, current):
+    """None means "could not read it" -- every output unplugged, or COM
+    unavailable. Reopening on that would tear down working audio for nothing."""
+    p = make_player()
+    p._stream = FakeStream()
+    p._opened_on = "endpoint-tv"
+    monkeypatch.setattr(player_mod, "_default_endpoint_id", lambda: current)
+    assert not p.default_device_changed()
+
+
+def test_closed_stream_is_not_a_device_change(monkeypatch):
+    """Nothing to move: the next open picks the right device by itself."""
+    p = make_player()
+    monkeypatch.setattr(player_mod, "_default_endpoint_id", lambda: "endpoint-aids")
+    assert not p.default_device_changed()
 
 
 def test_callback_never_raises():

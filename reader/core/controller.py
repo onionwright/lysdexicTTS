@@ -28,6 +28,12 @@ from .scheduler import SynthScheduler
 
 log = logging.getLogger(__name__)
 
+# How often to ask Windows whether the default output has moved. A COM call is
+# far too cheap to matter at this rate and far too expensive to make 30 times a
+# second, and a second of audio still coming out of the wrong speaker is not
+# something anyone notices on top of the pairing delay that caused it.
+DEVICE_POLL_S = 1.0
+
 
 @dataclass(slots=True)
 class ReaderState:
@@ -83,6 +89,7 @@ class ReaderController:
         self._request_t = 0.0
         self.first_audio_latency: Optional[float] = None
         self.truncated = False
+        self._last_device_poll = 0.0
 
     # ---------------------------------------------------------- lifecycle
 
@@ -261,6 +268,33 @@ class ReaderController:
 
     # --------------------------------------------------------------- tick
 
+    def _follow_default_device(self) -> None:
+        """Move playback to the default output when Windows moves it.
+
+        A stream is bound to the endpoint it was opened on, so this does not
+        happen by itself. It matters most in the case that looks least like a
+        bug: the reader starts at sign-in and opens the device straight away,
+        hearing aids or a headset finish pairing a few seconds later and become
+        the default, and every other application follows while this one carries
+        on playing to whatever the machine was using at boot.
+
+        Checked whether or not audio is playing, because with the comfort noise
+        on, the stream is held open the whole time the app is running -- so by
+        the time anything is read aloud it is already on the wrong device.
+        """
+        now = time.monotonic()
+        if now - self._last_device_poll < DEVICE_POLL_S:
+            return
+        self._last_device_poll = now
+        try:
+            if not self.player.default_device_changed():
+                return
+            self.player.reopen()
+        except Exception:
+            log.exception("failed to follow the default output device")
+            return
+        log.info("default output device changed; moved playback to it")
+
     def tick(self) -> ReaderState:
         """Advance bookkeeping. Call about every 33ms from the UI thread."""
         cur_unit = self.player.cur_index
@@ -282,6 +316,8 @@ class ReaderController:
                 self.player.reopen()
             except Exception:
                 log.exception("failed to reopen the output device")
+        else:
+            self._follow_default_device()
 
         sentence = self.current_sentence
         changed = (
