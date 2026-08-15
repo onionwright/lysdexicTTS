@@ -107,7 +107,7 @@ class ReaderApp(QObject):
 
         self.panel = ReaderPanel()
         self.pill = SelectionPill(
-            auto_hide_ms=int(self.cfg.get("selection", "pill_auto_hide_ms"))
+            auto_hide_ms=int(self.cfg.get("pill", "auto_hide_ms"))
         )
         self.tray = Tray()
         self.tray.setIcon(app_icon())
@@ -189,10 +189,16 @@ class ReaderApp(QObject):
         self.pill.read_clicked.connect(self._on_pill_read)
         self.pill.copy_clicked.connect(self._on_pill_copy)
 
-        self.watcher.candidate.connect(self._on_candidate)
-        self.watcher.hook_state_changed.connect(self._on_hook_state)
+        self._connect_watcher()
 
         self.engine_loaded.connect(self._on_engine_loaded)
+
+    def _connect_watcher(self) -> None:
+        """Signals from the watcher thread. A restarted watcher is a new
+        object, so this runs again rather than being inlined once."""
+        self.watcher.candidate.connect(self._on_candidate)
+        self.watcher.hook_state_changed.connect(self._on_hook_state)
+        self.watcher.mouse_pressed.connect(self.pill.dismiss_if_clicked_away)
 
     def _register_own_windows(self) -> None:
         """Our own windows must never be mistaken for a text selection."""
@@ -333,7 +339,11 @@ class ReaderApp(QObject):
             "selection candidate: source=%s text=%s process=%s",
             candidate.source, logmod.redact(candidate.text), candidate.process,
         )
-        self.pill.show_for(candidate.rect, (candidate.x, candidate.y))
+        self.pill.show_for(
+            candidate.rect,
+            (candidate.x, candidate.y),
+            (candidate.start_x, candidate.start_y),
+        )
 
     def _on_pill_read(self) -> None:
         clip = self.cfg.section("clipboard")
@@ -416,8 +426,7 @@ class ReaderApp(QObject):
     def _on_watcher_toggled(self, enabled: bool) -> None:
         if enabled and not self.watcher.isRunning():
             self.watcher = self._make_watcher()
-            self.watcher.candidate.connect(self._on_candidate)
-            self.watcher.hook_state_changed.connect(self._on_hook_state)
+            self._connect_watcher()
             self._register_own_windows()
             self.watcher.start()
         elif not enabled and self.watcher.isRunning():
@@ -509,7 +518,22 @@ class ReaderApp(QObject):
             str(cfg.get("colors", "page_tint")),
         )
 
-        self.pill.auto_hide_ms = int(cfg.get("selection", "pill_auto_hide_ms"))
+        self.pill.anchor = str(cfg.get("pill", "anchor"))
+        self.pill.above = bool(cfg.get("pill", "above"))
+        self.pill.offset = (
+            int(cfg.get("pill", "offset_x")), int(cfg.get("pill", "offset_y"))
+        )
+        self.pill.auto_hide_enabled = bool(cfg.get("pill", "auto_hide_enabled"))
+        self.pill.auto_hide_ms = int(cfg.get("pill", "auto_hide_ms"))
+        self.pill.hide_on_click_away = bool(cfg.get("pill", "hide_on_click_away"))
+        self.pill.hide_when_pointer_away = bool(
+            cfg.get("pill", "hide_when_pointer_away")
+        )
+        self.pill.pointer_distance_px = int(cfg.get("pill", "pointer_distance_px"))
+        self.pill.set_appearance(
+            int(cfg.get("pill", "font_pt")), bool(cfg.get("pill", "show_copy"))
+        )
+
         self.watcher.set_mode(cfg.get("selection", "mode"))
         self.watcher.enable_double_click = bool(
             cfg.get("selection", "enable_double_click")

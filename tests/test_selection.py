@@ -39,6 +39,34 @@ def test_drag_is_detected():
     assert (g.x, g.y) == (300, 100)
 
 
+def test_a_drag_reports_both_of_its_ends():
+    """A selection has two ends and people reach for either, so the pill can be
+    anchored to where the drag started rather than where it finished."""
+    d = det()
+    g = click(d, 100, 100, 1000, up_x=300, up_y=140, up_t=1200)
+    assert (g.x0, g.y0) == (100, 100), "where the button went down"
+    assert (g.x, g.y) == (300, 140), "where it came up"
+
+
+def test_a_backwards_drag_still_reports_where_it_began():
+    """Selecting right-to-left is not unusual, and 'start' must mean the
+    gesture's start, not the leftmost point."""
+    d = det()
+    g = click(d, 500, 200, 1000, up_x=200, up_y=200, up_t=1200)
+    assert (g.x0, g.y0) == (500, 200)
+    assert (g.x, g.y) == (200, 200)
+
+
+def test_a_click_gesture_starts_where_it_ends():
+    """Double and triple clicks have no span, so both ends are the same point
+    and every anchor lands in the same place."""
+    d = det()
+    click(d, 50, 50, 1000)
+    g = click(d, 50, 50, 1200)
+    assert g.kind == "double"
+    assert (g.x0, g.y0) == (g.x, g.y) == (50, 50)
+
+
 def test_short_drag_is_not_a_selection():
     """Below the distance threshold it's a click, not a drag-select."""
     d = det(min_px=12)

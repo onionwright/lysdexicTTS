@@ -88,7 +88,6 @@ DEFAULTS: Dict[str, Any] = {
         "drag_min_ms": 60,
         "probe_delay_ms": 120,
         "min_chars": 1,
-        "pill_auto_hide_ms": 4000,
         "enable_double_click": True,
         "enable_triple_click": True,
         # Turn off if you use Remote Desktop or an input remapper, which can
@@ -98,6 +97,27 @@ DEFAULTS: Dict[str, Any] = {
             "Shell_TrayWnd", "Progman", "WorkerW", "Windows.UI.Core.CoreWindow",
         ],
         "ignore_processes": [],
+    },
+    "pill": {
+        # Where the Read button appears:
+        #   selection        under the selected text itself
+        #   selection_start  where you began the drag
+        #   selection_end    where you finished the drag
+        #   mouse            wherever the pointer is
+        #   corner           fixed, bottom right, just above the notifications
+        "anchor": "selection",
+        "above": False,  # sit above the anchor rather than below it
+        "offset_x": 12,
+        "offset_y": 8,
+        # Three independent ways for it to go away. "Stay there until I click
+        # somewhere else" is auto_hide_enabled = false with click_away on.
+        "auto_hide_enabled": True,
+        "auto_hide_ms": 4000,
+        "hide_on_click_away": True,
+        "hide_when_pointer_away": False,
+        "pointer_distance_px": 220,
+        "show_copy": True,
+        "font_pt": 12,
     },
     "clipboard": {
         "fallback_enabled": True,
@@ -180,11 +200,32 @@ def load() -> Config:
     try:
         with open(path, "rb") as fh:
             raw = tomllib.load(fh)
-        return Config(_merge(DEFAULTS, raw))
+        return Config(_merge(DEFAULTS, _migrate(raw)))
     except Exception:
         # A malformed settings file must never stop the app from starting.
         log.exception("settings file is invalid; using defaults: %s", path)
         return Config()
+
+
+def _migrate(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Carry settings forward when a key moves house.
+
+    Applied to what was actually read from disk, *before* the defaults are
+    merged in -- afterwards every key exists and there is no way left to tell
+    "the user set this" from "this is the default".
+
+    The pill's timeout used to live in [selection], alongside the rules for
+    *detecting* a selection; it now sits with the rest of the pill's own
+    behaviour. Someone who had already tuned it should not be quietly put back
+    on the default.
+    """
+    old = (raw.get("selection") or {}).pop("pill_auto_hide_ms", None)
+    if old is not None and "auto_hide_ms" not in (raw.get("pill") or {}):
+        try:
+            raw.setdefault("pill", {})["auto_hide_ms"] = int(old)
+        except (TypeError, ValueError):
+            pass  # a hand-edited nonsense value; the default is fine
+    return raw
 
 
 def save(cfg: Config) -> bool:

@@ -186,9 +186,26 @@ def physical_size(widget) -> Tuple[int, int]:
     return int(round(widget.width() * ratio)), int(round(widget.height() * ratio))
 
 
-def clamp_to_work_area(x: int, y: int, w: int, h: int, margin: int = 8):
-    """Keep a window fully on screen."""
-    left, top, right, bottom = work_area_at(x, y)
+def cursor_pos() -> Tuple[int, int]:
+    """Pointer position in physical screen pixels."""
+    if not _IS_WIN:
+        return (0, 0)
+    pt = _POINT()
+    _user32().GetCursorPos(ctypes.byref(pt))
+    return (int(pt.x), int(pt.y))
+
+
+def clamp_within(
+    x: int, y: int, w: int, h: int, area: Tuple[int, int, int, int],
+    margin: int = 8,
+) -> Tuple[int, int]:
+    """Keep a ``w`` x ``h`` box inside ``area``. Pure -- no Windows calls."""
+    left, top, right, bottom = area
     x = max(left + margin, min(x, right - w - margin))
     y = max(top + margin, min(y, bottom - h - margin))
     return int(x), int(y)
+
+
+def clamp_to_work_area(x: int, y: int, w: int, h: int, margin: int = 8):
+    """Keep a window fully on screen, on whichever monitor it lands."""
+    return clamp_within(x, y, w, h, work_area_at(x, y), margin)

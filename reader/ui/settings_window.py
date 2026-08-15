@@ -225,6 +225,7 @@ class SettingsWindow(QWidget):
         self._add_page("Voice", self._page_voice)
         self._add_page("Reading", self._page_reading)
         self._add_page("Selecting text", self._page_selection)
+        self._add_page("Read button", self._page_pill)
         self._add_page("Text Settings", self._page_appearance)
         self._add_page("Colours", self._page_colors)
         self._add_page("Starting up", self._page_startup)
@@ -498,6 +499,8 @@ class SettingsWindow(QWidget):
         )
 
     def _page_selection(self, column: QVBoxLayout) -> None:
+        # This page is about *noticing* a selection. Everything about the
+        # button itself lives on the Read button page.
         self.mode_box = self._combo(
             column, "When to show the Read button",
             "The small button that appears beside text you have selected.",
@@ -518,13 +521,77 @@ class SettingsWindow(QWidget):
             column, "Show it when I triple-click a line",
             "", "selection", "enable_triple_click",
         )
+
+    def _page_pill(self, column: QVBoxLayout) -> None:
+        self.anchor_box = self._combo(
+            column, "Where it appears",
+            "Some apps cannot tell us exactly where your selected text is; "
+            "when that happens the first choice falls back to where you "
+            "finished selecting.",
+            [
+                ("Beside the text I selected", "selection"),
+                ("Where I started selecting", "selection_start"),
+                ("Where I finished selecting", "selection_end"),
+                ("Wherever the mouse pointer is", "mouse"),
+                ("Always in the corner, by the clock", "corner"),
+            ],
+            "pill", "anchor",
+        )
+        self.above_check = self._check(
+            column, "Put it above rather than below",
+            "", "pill", "above",
+        )
+        self.offset_x = self._slider(
+            column, "Nudge it sideways", "",
+            "pill", "offset_x", -60, 60, 4, lambda v: f"{int(v)} px",
+        )
+        self.offset_y = self._slider(
+            column, "Nudge it up or down", "",
+            "pill", "offset_y", -60, 60, 4, lambda v: f"{int(v)} px",
+        )
+
         self._divider(column)
+        self.autohide_check = self._check(
+            column, "Hide it on its own after a while",
+            "Turn this off and it stays until you dismiss it another way.",
+            "pill", "auto_hide_enabled",
+        )
         self.hide_slider = self._slider(
-            column, "Hide the button after",
+            column, "Hide it after",
             "How long the Read button waits before disappearing.",
-            "selection", "pill_auto_hide_ms", 1500, 12000, 500,
+            "pill", "auto_hide_ms", 1500, 12000, 500,
             lambda v: f"{v / 1000:.1f} s",
         )
+        self.clickaway_check = self._check(
+            column, "Hide it when I click somewhere else",
+            "Clicking the button itself never counts.",
+            "pill", "hide_on_click_away",
+        )
+        self.pointer_check = self._check(
+            column, "Hide it when I move the mouse away",
+            "", "pill", "hide_when_pointer_away",
+        )
+        self.pointer_slider = self._slider(
+            column, "How far away counts",
+            "Measured from the edge of the button, not its middle.",
+            "pill", "pointer_distance_px", 60, 600, 20, lambda v: f"{int(v)} px",
+        )
+
+        self._divider(column)
+        self.pill_font = self._slider(
+            column, "Button text size",
+            "The Read button does not have to be small just because it floats.",
+            "pill", "font_pt", 8, 22, 1, lambda v: f"{int(v)} pt",
+        )
+        self.copy_check = self._check(
+            column, "Offer Copy as well as Read",
+            "Turn this off for a smaller button with one thing on it.",
+            "pill", "show_copy",
+        )
+
+        # The two sliders only mean anything when their rule is switched on.
+        self.autohide_check.toggled.connect(self.hide_slider.setEnabled)
+        self.pointer_check.toggled.connect(self.pointer_slider.setEnabled)
 
     def _page_appearance(self, column: QVBoxLayout) -> None:
         self.font_slider = self._slider(
@@ -740,6 +807,7 @@ class SettingsWindow(QWidget):
         self._loading = True
         try:
             _select_data(self.mode_box, self.cfg.get("selection", "mode"))
+            _select_data(self.anchor_box, self.cfg.get("pill", "anchor"))
             _select_data(
                 self.keepalive_color, self.cfg.get("audio", "keep_alive_color")
             )
@@ -755,7 +823,11 @@ class SettingsWindow(QWidget):
                 (self.paragraph_pause, "audio", "paragraph_pause_s"),
                 (self.restart_threshold, "playback", "prev_restart_threshold_s"),
                 (self.lookahead, "playback", "lookahead_sentences"),
-                (self.hide_slider, "selection", "pill_auto_hide_ms"),
+                (self.hide_slider, "pill", "auto_hide_ms"),
+                (self.offset_x, "pill", "offset_x"),
+                (self.offset_y, "pill", "offset_y"),
+                (self.pointer_slider, "pill", "pointer_distance_px"),
+                (self.pill_font, "pill", "font_pt"),
                 (self.keepalive_slider, "audio", "keep_alive_db"),
                 (self.font_slider, "ui", "panel_font_pt"),
                 (self.spacing_slider, "ui", "panel_line_spacing"),
@@ -785,6 +857,20 @@ class SettingsWindow(QWidget):
             self.hotkey_check.setChecked(
                 bool(self.cfg.get("app", "stop_hotkey_enabled"))
             )
+
+            for check, key in (
+                (self.above_check, "above"),
+                (self.autohide_check, "auto_hide_enabled"),
+                (self.clickaway_check, "hide_on_click_away"),
+                (self.pointer_check, "hide_when_pointer_away"),
+                (self.copy_check, "show_copy"),
+            ):
+                check.setChecked(bool(self.cfg.get("pill", key)))
+            # toggled() does not fire while _loading suppresses writes, so the
+            # dependent sliders are greyed here rather than relying on the
+            # signal that keeps them in step afterwards.
+            self.hide_slider.setEnabled(self.autohide_check.isChecked())
+            self.pointer_slider.setEnabled(self.pointer_check.isChecked())
         finally:
             self._loading = False
         # Rebuilds the dropdowns from disk, so a voice downloaded elsewhere
@@ -796,7 +882,8 @@ class SettingsWindow(QWidget):
         if self._loading:
             return
         if key in ("panel_font_pt", "lookahead_sentences", "torch_threads",
-                   "pill_auto_hide_ms"):
+                   "auto_hide_ms", "offset_x", "offset_y",
+                   "pointer_distance_px", "font_pt"):
             value = int(round(float(value)))
         self.cfg.set(section, key, value)
         self._update_preview()

@@ -22,6 +22,7 @@ from . import hook as hookmod
 from .hook import (
     WM_LBUTTONDOWN,
     WM_LBUTTONUP,
+    WM_RBUTTONDOWN,
     MouseHook,
     double_click_slop,
     double_click_time_ms,
@@ -45,6 +46,11 @@ class Gesture:
     x: int
     y: int
     hwnd: int
+    # Where the button went *down*. A selection has two ends and people reach
+    # for either: the pill can be anchored to where you started dragging rather
+    # than where you stopped. Equal to (x, y) for double and triple clicks.
+    x0: int = 0
+    y0: int = 0
 
 
 @dataclass(slots=True)
@@ -66,6 +72,9 @@ class SelectionCandidate:
     hwnd: int
     source: str  # 'text-pattern' | 'value-pattern' | 'gesture'
     process: str
+    # Where the selection gesture began, for anchoring the pill there.
+    start_x: int = 0
+    start_y: int = 0
 
 
 class DragDetector:
@@ -126,11 +135,11 @@ class DragDetector:
 
         if dist >= self.min_px and dt >= self.min_ms:
             self._click_count = 0
-            return Gesture("drag", x, y, 0)
+            return Gesture("drag", x, y, 0, x0=dx0, y0=dy0)
         if self._click_count >= 3:
-            return Gesture("triple", x, y, 0)
+            return Gesture("triple", x, y, 0, x0=dx0, y0=dy0)
         if self._click_count == 2:
-            return Gesture("double", x, y, 0)
+            return Gesture("double", x, y, 0, x0=dx0, y0=dy0)
         return None
 
 
@@ -139,6 +148,11 @@ class SelectionWatcher(QThread):
 
     candidate = Signal(object)  # SelectionCandidate
     hook_state_changed = Signal(bool)
+    # Any real mouse press, with the top-level window under it. The pill uses
+    # this to dismiss itself when you click somewhere else, which is the only
+    # way to offer "stay until I click away" -- the hook is the one place that
+    # sees a click landing in another application.
+    mouse_pressed = Signal(int)
 
     def __init__(
         self,
@@ -210,14 +224,28 @@ class SelectionWatcher(QThread):
                 self.hook_state_changed.emit(last_installed)
 
             gesture = None
+            pressed_at = None
             while self.hook.events:
                 try:
                     msg, x, y, t_ms, injected = self.hook.events.popleft()
                 except IndexError:
                     break
+                if msg in (WM_LBUTTONDOWN, WM_RBUTTONDOWN) and not (
+                    injected and self.detector.ignore_injected
+                ):
+                    pressed_at = (x, y)
                 g = self.detector.feed(msg, x, y, t_ms, injected)
                 if g is not None:
                     gesture = g  # keep only the most recent
+
+            # Before _handle, deliberately: that sleeps for probe_delay_ms on
+            # this thread, and a pill that takes an extra 120ms to get out of
+            # the way after you have clicked past it reads as broken. A fresh
+            # drag both dismisses here and re-shows on its release, and the
+            # re-show is later, so it wins.
+            if pressed_at is not None:
+                self.mouse_pressed.emit(hookmod.window_at(*pressed_at))
+
             if gesture is None or self.mode == MODE_OFF:
                 continue
             if gesture.kind == "double" and not self.enable_double_click:
@@ -277,6 +305,8 @@ class SelectionWatcher(QThread):
                 hwnd=hwnd,
                 source=source,
                 process=proc,
+                start_x=gesture.x0,
+                start_y=gesture.y0,
             )
         )
 

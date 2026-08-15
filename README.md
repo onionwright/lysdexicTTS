@@ -139,7 +139,7 @@ control, so it was removed rather than left to lie.
 
 | | |
 |---|---|
-| Select text anywhere | The pill appears — **Read** or **Copy** |
+| Select text anywhere | The pill appears — **Read** or **Copy** (where, and how it goes away, are settings) |
 | Transport | Buttons on the panel: prev · play/pause · next · stop |
 | Previous | Restarts the current sentence if you're >2s in, else steps back |
 | Jump | Click any sentence in the panel |
@@ -148,9 +148,37 @@ control, so it was removed rather than left to lie.
 | Tray | Read clipboard, show panel, edit settings, quit |
 
 Settings live under tray → *Settings…* — a plain visual window with real
-controls, grouped as Voice, Reading, Selecting text, Text size, Starting up and
-Advanced. Every option has a short plain-language description; nothing requires
-reading configuration syntax. Changes apply and save as you make them.
+controls, grouped as Voice, Reading, Selecting text, Read button, Text size,
+Colours, Starting up and Advanced. Every option has a short plain-language
+description; nothing requires reading configuration syntax. Changes apply and
+save as you make them.
+
+**The Read button** (Read button page) has its own page because where a floating
+button appears and when it goes away are the sort of thing that is either
+invisible or maddening, with very little in between.
+
+It can sit beside the selected text, at the point where you *started* dragging,
+at the point where you finished, wherever the pointer is, or pinned to the
+bottom-right corner by the clock — and above rather than below, nudged by however
+many pixels you like. The first of those needs the application to report where
+your selection actually is; Electron apps and several PDF viewers do not, and
+there it falls back to where you finished dragging. That fallback used to be the
+only behaviour the pill had.
+
+Three ways for it to go away, and they are independent because people want
+different combinations: a timer, a click somewhere else, and the pointer moving
+away by a distance you set. *Stay there until I click away* is the timer off and
+the click rule on. Clicking the button itself never counts as clicking away —
+the pill never takes focus, so its own clicks arrive through the same global hook
+as everyone else's, and without that check pressing **Read** would dismiss the
+pill out from under the press.
+
+The move-away rule polls the cursor on a timer rather than watching the mouse
+hook, and that is deliberate: the hook drops mouse-move messages on purpose,
+because queueing them at 100–500 Hz is exactly the pressure that trips Windows'
+300 ms `LowLevelHooksTimeout` and gets the hook silently unhooked — which would
+take select-to-read down with it. Polling only while the pill is on screen costs
+nothing and cannot endanger that.
 
 **Text size and line spacing are first-class settings**, not theme details.
 Generous type and loose line spacing are among the few interventions with real
