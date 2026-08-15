@@ -115,6 +115,10 @@ DEFAULTS: Dict[str, Any] = {
         "auto_hide_ms": 4000,
         "hide_on_click_away": True,
         "hide_when_pointer_away": False,
+        # Distance from the button *and* from where the pointer was when the
+        # button appeared. The pill often opens a long way from the pointer --
+        # a wide drag-select anchors it at the end you started from -- and
+        # measuring to the button alone hid it before you had moved at all.
         "pointer_distance_px": 220,
         "show_copy": True,
         "font_pt": 12,

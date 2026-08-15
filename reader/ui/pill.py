@@ -14,7 +14,9 @@ mouse.
 
 Three dismissal rules, independent because people want different combinations
 of them: a timer, a click somewhere else, and the pointer moving away. "Stay
-there until I click away" is the timer off and the click rule on.
+there until I click away" is the timer off and the click rule on. The
+move-away rule measures against :func:`keepalive_zone` rather than the pill
+alone -- see there for why the obvious version is wrong.
 """
 
 from __future__ import annotations
@@ -175,6 +177,30 @@ def pointer_distance(rect: Rect, point: Point) -> float:
     return math.hypot(dx, dy)
 
 
+def keepalive_zone(pill_rect: Rect, origin: Point) -> Rect:
+    """The region the pointer may be in without the pill hiding itself.
+
+    Not just the pill. The pill routinely appears a long way from the pointer
+    and that is not the user going anywhere: drag-select a wide line and the
+    selection's bounding rectangle starts where you *began*, so an anchor tied
+    to that rectangle lands at one end of the sweep while the pointer is at the
+    other. Measuring pointer-to-pill alone means the pill is already "far away"
+    the instant it appears, and it dies on the first tick without the pointer
+    having moved at all. The corner anchor makes that failure total.
+
+    So the zone spans the pill *and* where the pointer was when the pill
+    appeared, which also leaves a corridor between the two -- moving straight
+    from your selection to the button must not dismiss the button.
+
+    When the two are far apart the zone is correspondingly large and this rule
+    stops meaning much; that is the honest trade, and it fails toward leaving
+    the pill on screen rather than snatching it away.
+    """
+    left, top, right, bottom = pill_rect
+    ox, oy = origin
+    return (min(left, ox), min(top, oy), max(right, ox), max(bottom, oy))
+
+
 # ------------------------------------------------------------------ widget
 
 
@@ -205,9 +231,11 @@ class SelectionPill(QWidget):
         self.show_copy = True
         self.font_pt = 12
 
-        # Physical rect of the pill as last placed, for the proximity check.
-        # Qt reports logical pixels and the pointer arrives in physical ones.
+        # Physical rect of the pill as last placed, and where the pointer was
+        # when it appeared -- both needed for the proximity check. Qt reports
+        # logical pixels and the pointer arrives in physical ones.
         self._placed: Optional[Rect] = None
+        self._pointer_origin: Point = (0, 0)
 
         self.setStyleSheet(pill_qss(self.font_pt))
 
@@ -297,6 +325,7 @@ class SelectionPill(QWidget):
             above=self.above,
         )
         self._placed = (x, y, x + w, y + h)
+        self._pointer_origin = cursor
 
         winwin.show_no_activate(self)
         winwin.apply_no_activate(self)
@@ -345,7 +374,8 @@ class SelectionPill(QWidget):
         if not self.isVisible() or self._placed is None:
             self._proximity.stop()
             return
-        if pointer_distance(self._placed, winwin.cursor_pos()) > self.pointer_distance_px:
+        zone = keepalive_zone(self._placed, self._pointer_origin)
+        if pointer_distance(zone, winwin.cursor_pos()) > self.pointer_distance_px:
             self.hide()
 
     def hideEvent(self, event):

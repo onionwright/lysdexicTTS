@@ -173,6 +173,16 @@ the pill never takes focus, so its own clicks arrive through the same global hoo
 as everyone else's, and without that check pressing **Read** would dismiss the
 pill out from under the press.
 
+The move-away rule measures from the button *and* from where your pointer was
+when the button appeared. That is not fussiness. The pill routinely opens a long
+way from your pointer: drag-select a wide line and the selection's bounding
+rectangle begins where you *started*, so an anchor tied to that rectangle lands
+at one end of the sweep while your hand is at the other. Measuring to the button
+alone means it is already "far away" the moment it appears and it dies without
+you having moved — and it also means moving over to press the thing dismisses it
+on the way. Covering both ends, and the corridor between them, is what makes the
+rule mean "you moved away" rather than "it opened over there".
+
 The move-away rule polls the cursor on a timer rather than watching the mouse
 hook, and that is deliberate: the hook drops mouse-move messages on purpose,
 because queueing them at 100–500 Hz is exactly the pressure that trips Windows'

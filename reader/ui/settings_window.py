@@ -573,7 +573,10 @@ class SettingsWindow(QWidget):
         )
         self.pointer_slider = self._slider(
             column, "How far away counts",
-            "Measured from the edge of the button, not its middle.",
+            "Measured from the button, and from where your pointer was when it "
+            "appeared — so a button that opens away from your pointer does not "
+            "vanish before you have moved, and moving over to press it never "
+            "dismisses it.",
             "pill", "pointer_distance_px", 60, 600, 20, lambda v: f"{int(v)} px",
         )
 

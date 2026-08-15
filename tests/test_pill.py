@@ -20,6 +20,7 @@ from reader.ui.pill import (  # noqa: E402
     ANCHOR_SELECTION_START,
     ANCHORS,
     EDGE_MARGIN,
+    keepalive_zone,
     place_pill,
     pointer_distance,
     reference_point,
@@ -193,6 +194,60 @@ def test_a_wider_pill_does_not_change_what_the_threshold_means():
     assert narrow == wide == 100.0
 
 
+# ------------------------------------------------- proximity keepalive zone
+
+PILL = (400, 340, 560, 380)   # placed at the left end of a wide selection
+SWEEP_END = (1700, 320)       # where the pointer finished the drag
+RADIUS = 220
+
+
+def test_a_pill_that_appears_far_away_does_not_instantly_vanish():
+    """Regression, reported in a browser PDF: swipe across the screen, and the
+    selection's bounding rectangle starts where you *began*, so the pill lands
+    at one end of the sweep while the pointer is at the other. Measuring
+    pointer-to-pill alone made it die on the first tick, having never moved."""
+    zone = keepalive_zone(PILL, SWEEP_END)
+    assert pointer_distance(zone, SWEEP_END) == 0.0
+
+    naive = pointer_distance(PILL, SWEEP_END)
+    assert naive > RADIUS, "the bug this guards: pill-only distance is enormous"
+
+
+def test_moving_from_the_selection_to_the_button_keeps_it_alive():
+    """The corridor between the two has to count, or the pill is snatched away
+    while you are on your way to press it."""
+    zone = keepalive_zone(PILL, SWEEP_END)
+    for x in range(560, 1700, 50):
+        assert pointer_distance(zone, (x, 350)) == 0.0
+
+
+def test_wandering_off_still_hides_it():
+    """The rule has to keep meaning something."""
+    zone = keepalive_zone(PILL, SWEEP_END)
+    assert pointer_distance(zone, (900, 900)) > RADIUS
+    assert pointer_distance(zone, (900, 20)) > RADIUS
+
+
+def test_hovering_the_pill_itself_always_counts_as_near():
+    zone = keepalive_zone(PILL, (480, 360))  # pointer started on the pill
+    assert zone == PILL, "an origin inside the pill adds nothing"
+    assert pointer_distance(zone, (480, 360)) == 0.0
+
+
+def test_the_zone_contains_both_ends():
+    zone = keepalive_zone(PILL, SWEEP_END)
+    assert pointer_distance(zone, (PILL[0], PILL[1])) == 0.0
+    assert pointer_distance(zone, SWEEP_END) == 0.0
+
+
+def test_a_corner_anchored_pill_is_not_killed_on_sight():
+    """The failure was total for this anchor: the pill is always in the corner
+    and the pointer never is."""
+    corner_pill = (1752, 992, 1912, 1032)
+    zone = keepalive_zone(corner_pill, (300, 200))
+    assert pointer_distance(zone, (300, 200)) == 0.0
+
+
 # ------------------------------------------------------------------ widget
 
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
@@ -278,6 +333,29 @@ def test_auto_hide_on_starts_the_timer(qapp):
     pill.auto_hide_ms = 5000
     pill.show_for(RECT, END, START)
     assert pill._auto_hide.isActive()
+    pill.close()
+
+
+def test_the_proximity_check_does_not_fire_where_the_pointer_already_is(qapp, monkeypatch):
+    """End to end for the browser-PDF report: the pill lands at the far end of
+    a sweep, the pointer has not moved, and the very next tick must not hide
+    it."""
+    import reader.ui.pill as pill_mod
+
+    pill = SelectionPill()
+    pill.hide_when_pointer_away = True
+    pill.pointer_distance_px = RADIUS
+    pill.show()
+    pill._placed = PILL
+    pill._pointer_origin = SWEEP_END
+
+    monkeypatch.setattr(pill_mod.winwin, "cursor_pos", lambda: SWEEP_END)
+    pill._check_pointer()
+    assert pill.isVisible(), "it must survive a tick with a stationary pointer"
+
+    monkeypatch.setattr(pill_mod.winwin, "cursor_pos", lambda: (1000, 900))
+    pill._check_pointer()
+    assert not pill.isVisible(), "and still go when the pointer really leaves"
     pill.close()
 
 
