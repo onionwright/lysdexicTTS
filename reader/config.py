@@ -73,6 +73,16 @@ DEFAULTS: Dict[str, Any] = {
         "highlight": "#2f5aa8",  # the sentence being spoken
         "page_tint": "#23262e",  # behind the reading text
     },
+    "reading": {
+        # Longest highlight block, in words. Longer sentences are split into
+        # even pieces at clause boundaries, so every block is about the same
+        # size -- easy to follow, easy to click back to. 0 = no cap.
+        "max_block_words": 10,
+        # Sentences shorter than this many characters are merged into a
+        # neighbour; synthesis carries ~0.4s fixed overhead per block, so
+        # over-splitting is pure loss.
+        "tiny_merge_chars": 30,
+    },
     "playback": {
         "lookahead_sentences": 3,
         "cache_max_seconds": 300,
@@ -144,6 +154,14 @@ DEFAULTS: Dict[str, Any] = {
         "panel_font_pt": 13,
         "panel_line_spacing": 1.5,
         "panel_font_family": "",  # empty = system default sans-serif
+        # Flash the word being spoken in a strip above the text, timed to the
+        # voice, so the eye never has to travel to find its place.
+        "rsvp_enabled": False,
+        # Extra delay before each word appears, in ms, on top of the sound
+        # buffering the app can measure itself. Wireless headphones and
+        # hearing aids add delay Windows does not report; raise this until
+        # the flashed word lands with the voice.
+        "rsvp_delay_ms": 0,
     },
     "app": {
         "log_level": "INFO",

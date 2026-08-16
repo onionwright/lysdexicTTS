@@ -12,6 +12,7 @@ import glob
 import logging
 import os
 import threading
+import time
 import warnings
 from typing import List, Optional
 
@@ -107,12 +108,21 @@ class KokoroEngine(TtsEngine):
             if self.prefer_offline and _snapshot_dirs(self.repo_id):
                 os.environ.setdefault("HF_HUB_OFFLINE", "1")
                 log.debug("model snapshot found locally; HF_HUB_OFFLINE=1")
+            elif self.prefer_offline:
+                # The guard not firing means every hf_hub_download revalidates
+                # over the network -- the classic cause of a multi-minute load.
+                log.warning(
+                    "no local snapshot of %s found; model files will be "
+                    "resolved over the network", self.repo_id,
+                )
 
+            t0 = time.perf_counter()
             import torch
 
             # 8 threads benchmarks ~20% faster than 4 on this 4-core part, but
             # oversubscribing directly starves the audio callback thread.
             torch.set_num_threads(max(1, self.torch_threads))
+            t_torch = time.perf_counter()
 
             with warnings.catch_warnings():
                 # kokoro's vocoder emits a weight_norm deprecation and an LSTM
@@ -122,11 +132,18 @@ class KokoroEngine(TtsEngine):
                 warnings.filterwarnings("ignore", category=UserWarning)
                 from kokoro import KPipeline
 
+                t_import = time.perf_counter()
                 self._pipeline = KPipeline(
                     lang_code=self.lang_code,
                     repo_id=self.repo_id,
                     device=self.device,
                 )
+            t_pipeline = time.perf_counter()
+            log.info(
+                "model load: torch import %.1fs, kokoro import %.1fs, "
+                "pipeline build %.1fs",
+                t_torch - t0, t_import - t_torch, t_pipeline - t_import,
+            )
 
             self._model_rev = _detect_model_revision(self.repo_id)
 

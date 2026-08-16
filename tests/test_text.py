@@ -22,6 +22,14 @@ def splitter():
     return sp
 
 
+@pytest.fixture(scope="module")
+def splitter_nocap():
+    """Cap disabled: pins the behaviour cap-off users still get."""
+    sp = SentenceSplitter(max_block_words=0)
+    sp.warm()
+    return sp
+
+
 def texts(sp, raw):
     sents, _ = sp.split(raw)
     return [s.text for s in sents]
@@ -58,9 +66,14 @@ def test_short_trailing_sentence_folds_into_its_neighbour(splitter):
     assert out == ["Dr. Smith paid 3.14 dollars for it. Then he left."]
 
 
-def test_pdf_hard_wrap_is_rejoined(splitter):
-    """A single newline mid-sentence is a wrap, not a boundary."""
-    out = texts(splitter, "This is a hard-wrapped\nline from a PDF that continues here.")
+def test_pdf_hard_wrap_is_rejoined(splitter_nocap):
+    """A single newline mid-sentence is a wrap, not a boundary. Cap off: this
+    11-word sentence would (correctly) be capped into two blocks, which is not
+    what this test is about."""
+    out = texts(
+        splitter_nocap,
+        "This is a hard-wrapped\nline from a PDF that continues here.",
+    )
     assert out == ["This is a hard-wrapped line from a PDF that continues here."]
 
 
@@ -111,16 +124,20 @@ def test_char_offsets_point_into_the_original(splitter):
         assert raw[s.char_start:s.char_end].strip() == s.text
 
 
-def test_long_opening_sentence_is_sub_split_for_latency(splitter):
+LONG_SENTENCE = (
+    "Text-to-speech systems have improved dramatically over the last few "
+    "years, but the gap between producing a single sentence and reading a "
+    "whole document aloud remains surprisingly wide, and most of the "
+    "difficulty has nothing to do with the acoustic model itself."
+)
+
+
+def test_long_opening_sentence_is_sub_split_for_latency(splitter_nocap):
     """The common case -- highlight a paragraph, press Read -- must not wait
-    for the whole first sentence to render (measured 5.7s before this)."""
-    long_sentence = (
-        "Text-to-speech systems have improved dramatically over the last few "
-        "years, but the gap between producing a single sentence and reading a "
-        "whole document aloud remains surprisingly wide, and most of the "
-        "difficulty has nothing to do with the acoustic model itself."
-    )
-    sents, _ = splitter.split(long_sentence)
+    for the whole first sentence to render (measured 5.7s before this).
+    Cap off: with the block cap on, the splitter cuts first and units map 1:1
+    (pinned separately below)."""
+    sents, _ = splitter_nocap.split(LONG_SENTENCE)
     units = build_units(sents)
     assert len(sents) == 1
     assert len(units) > 1, "a long opening sentence must be sub-split"
@@ -130,19 +147,78 @@ def test_long_opening_sentence_is_sub_split_for_latency(splitter):
     assert all(u.sentence_index == 0 for u in units)
 
 
-def test_units_stop_sub_splitting_once_primed(splitter):
+def test_units_stop_sub_splitting_once_primed(splitter_nocap):
     """Sub-splitting costs prosody, so it stops once the buffer is deep."""
     long_sentence = (
         "This particular sentence is quite long indeed, and it carries several "
         "clauses, which means it would ordinarily be a candidate for splitting "
         "into multiple separate playback units by the builder. "
     )
-    sents, _ = splitter.split(long_sentence * 6)
+    sents, _ = splitter_nocap.split(long_sentence * 6)
     units = build_units(sents, prime_seconds=10.0)
     tail = [u for u in units if u.sentence_index >= len(sents) - 2]
     assert all(u.is_sentence_start and u.is_sentence_end for u in tail), (
         "late sentences should be whole units"
     )
+
+
+# --------------------------------------------------------------- block cap
+
+
+def test_long_sentence_is_capped(splitter):
+    """Every highlight block stays at or under the word cap, in balanced
+    pieces, and each piece still points into the original text."""
+    sents, _ = splitter.split(LONG_SENTENCE)
+    assert len(sents) >= 2, "a 40-word sentence must be split"
+    for s in sents:
+        assert 2 <= len(s.text.split()) <= 10, s.text
+        assert LONG_SENTENCE[s.char_start:s.char_end].strip() == s.text
+    # Balanced: no piece may be a runt while another is at the cap.
+    sizes = [len(s.text.split()) for s in sents]
+    assert max(sizes) - min(sizes) <= 5, sizes
+
+
+def test_capped_sentences_map_one_to_one_onto_units(splitter):
+    """Capped sentences are already short, so the cold-buffer sub-splitter in
+    build_units never needs to fire and every block is one playlist unit."""
+    sents, _ = splitter.split(LONG_SENTENCE)
+    units = build_units(sents)
+    assert len(units) == len(sents)
+    assert all(u.is_sentence_start and u.is_sentence_end for u in units)
+
+
+def test_cap_prefers_clause_boundaries(splitter):
+    raw = (
+        "One two three four five six seven eight, "
+        "nine ten eleven twelve thirteen fourteen."
+    )
+    out = texts(splitter, raw)
+    assert len(out) == 2
+    assert out[0].endswith("eight,"), out
+
+
+def test_cap_pieces_get_short_pause(splitter):
+    """A cut mid-sentence must sound like a clause break, not a full stop."""
+    sents, _ = splitter.split(LONG_SENTENCE)
+    assert len(sents) >= 2
+    for s in sents[:-1]:
+        assert s.pause_after_s == pytest.approx(0.08)
+        assert not s.is_paragraph_end
+    assert sents[-1].pause_after_s > 0.08, "the real sentence end keeps its pause"
+
+
+def test_merge_respects_cap(splitter):
+    """A tiny fragment folds into its neighbour only while the result stays
+    within the cap; otherwise it keeps its own block."""
+    nine = "Alpha beta gamma delta epsilon zeta eta theta iota."
+    ten = "Alpha beta gamma delta epsilon zeta eta theta iota kappa."
+    assert texts(splitter, f"{nine} No.") == [f"{nine} No."]
+    assert texts(splitter, f"{ten} No.") == [ten, "No."]
+
+
+def test_cap_off_leaves_sentences_whole(splitter_nocap):
+    sents, _ = splitter_nocap.split(LONG_SENTENCE)
+    assert [s.text for s in sents] == [LONG_SENTENCE]
 
 
 def test_empty_and_whitespace_input(splitter):

@@ -22,6 +22,7 @@ from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetrics,
     QPainter,
     QTextBlockFormat,
     QTextCharFormat,
@@ -41,7 +42,7 @@ from .. import APP_NAME
 from ..text.types import Sentence
 from ..win import window as winwin
 from .icons import IconButton
-from .palette import ReadingColors, mix
+from .palette import ReadingColors, contrast_ratio, mix, readable_text_on
 from .theme import DEFAULT_COLORS, THEME, panel_qss
 
 log = logging.getLogger(__name__)
@@ -85,6 +86,11 @@ class ReaderPanel(QWidget):
         self._font_pt = 13
         self._line_spacing = 1.5
         self._font_family = ""
+        # RSVP strip: the word being spoken, alone in a fixed spot, so the eye
+        # never has to travel to find it.
+        self._rsvp_enabled = False
+        self._rsvp_word = ""
+        self._rsvp_playing = True
 
         self._build()
         self._apply_colors()
@@ -141,6 +147,15 @@ class ReaderPanel(QWidget):
 
         self._header = header
         outer.addWidget(header)
+
+        # --- RSVP word strip, between header and text. Fixed height (set in
+        # set_typography) so showing, clearing, or changing the word never
+        # reflows the document below it.
+        self.word_strip = QLabel("", self)
+        self.word_strip.setObjectName("rsvpWord")
+        self.word_strip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.word_strip.hide()
+        outer.addWidget(self.word_strip)
 
         # --- body
         self.text = QTextEdit(self)
@@ -207,12 +222,28 @@ class ReaderPanel(QWidget):
                 mix(c.header, c.body_text, 0.10),
                 mix(c.header, c.body_text, 0.18),
             )
+        self._style_word_strip()
         # The wash carries a colour, so it is stale the moment the paper
         # changes; rebuilding it is cheap next to re-reading the document.
         if self._sentences:
             self._build_wash()
         self._apply_highlight(self._current)
         self.update()
+
+    def _style_word_strip(self) -> None:
+        """Restyle the RSVP strip for the current colours and play state."""
+        c = self._colors
+        ink = c.highlight
+        # A highlight chosen against light paper can vanish on the darker
+        # header strip; fall back to plain readable ink when it would.
+        if contrast_ratio(c.header, ink) < 3.0:
+            ink = readable_text_on(c.header)
+        if not self._rsvp_playing:
+            ink = mix(ink, c.header, 0.55)  # dimmed while paused
+        self.word_strip.setStyleSheet(
+            f"background: {c.header}; color: {ink};"
+            f" border-bottom: 1px solid {c.edge};"
+        )
 
     def set_typography(
         self, font_pt: int, line_spacing: float, family: str = ""
@@ -231,7 +262,21 @@ class ReaderPanel(QWidget):
             font.setStyleHint(QFont.StyleHint.SansSerif)
         font.setPointSize(self._font_pt)
         self.text.setFont(font)
+        self._apply_rsvp_typography()
         self._apply_line_spacing()
+
+    def _apply_rsvp_typography(self) -> None:
+        rsvp_font = (
+            QFont(self._font_family) if self._font_family else QFont()
+        )
+        if not self._font_family:
+            rsvp_font.setStyleHint(QFont.StyleHint.SansSerif)
+        # Larger than the body so the flashed word is effortless to fixate on;
+        # tied to the body size so one slider scales both.
+        rsvp_font.setPointSize(max(12, int(self._font_pt * 1.9)))
+        rsvp_font.setBold(True)
+        self.word_strip.setFont(rsvp_font)
+        self.word_strip.setFixedHeight(QFontMetrics(rsvp_font).height() + 16)
 
     def _apply_line_spacing(self) -> None:
         cursor = QTextCursor(self.text.document())
@@ -264,6 +309,28 @@ class ReaderPanel(QWidget):
 
     def set_status(self, text: str) -> None:
         self.status.setText(text)
+
+    def set_rsvp_enabled(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if enabled == self._rsvp_enabled:
+            return
+        self._rsvp_enabled = enabled
+        if not enabled:
+            self._rsvp_word = ""
+            self.word_strip.setText("")
+        self.word_strip.setVisible(enabled)
+
+    def set_current_word(self, word: str, playing: bool) -> None:
+        """Show the word being spoken right now; "" clears the strip."""
+        if not self._rsvp_enabled:
+            return
+        if word == self._rsvp_word and playing == self._rsvp_playing:
+            return
+        if playing != self._rsvp_playing:
+            self._rsvp_playing = playing
+            self._style_word_strip()
+        self._rsvp_word = word
+        self.word_strip.setText(word)
 
     def set_playing(self, playing: bool) -> None:
         self.btn_play.set_shape("pause" if playing else "play")

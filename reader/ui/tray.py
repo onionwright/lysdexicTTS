@@ -28,6 +28,7 @@ class Tray(QSystemTrayIcon):
     read_clipboard = Signal()
     show_panel = Signal()
     stop_reading = Signal()
+    restart_requested = Signal()
     quit_requested = Signal()
     open_settings = Signal()
     open_settings_folder = Signal()
@@ -70,6 +71,11 @@ class Tray(QSystemTrayIcon):
         menu.addAction(act_reload)
 
         menu.addSeparator()
+
+        act_restart = QAction("Restart", menu)
+        act_restart.triggered.connect(self.restart_requested)
+        menu.addAction(act_restart)
+
         act_quit = QAction("Quit", menu)
         act_quit.triggered.connect(self.quit_requested)
         menu.addAction(act_quit)

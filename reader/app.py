@@ -14,15 +14,19 @@ the audio callback free of signals and locks.
 
 from __future__ import annotations
 
+import ctypes
 import logging
+import os
+import subprocess
 import sys
 import threading
+import time
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
@@ -42,10 +46,35 @@ from .ui.tray import Tray
 from .win import dpi, shell, singleton
 from .win import capture as capmod
 from .win import window as winwin
-from .win.hotkey import StopHotkey
+from .win.hotkey import _MSG, StopHotkey
 from .win.selection import SelectionWatcher
 
 log = logging.getLogger(__name__)
+
+
+class _ShowPanelFilter(QAbstractNativeEventFilter):
+    """Answers ``singleton.signal_existing_instance()``.
+
+    A second launch broadcasts a registered window message and exits; without a
+    listener that relaunch is a completely silent no-op, which reads as "the
+    app is frozen". Fronting the panel is the visible response.
+    """
+
+    def __init__(self, callback) -> None:
+        super().__init__()
+        self._callback = callback
+        self._msg_id = singleton.show_message_id()
+
+    def nativeEventFilter(self, event_type, message):
+        if self._msg_id and event_type == b"windows_generic_MSG":
+            try:
+                msg = ctypes.cast(int(message), ctypes.POINTER(_MSG)).contents
+                if msg.message == self._msg_id:
+                    self._callback()
+                    return True, 0
+            except Exception:
+                log.debug("show-panel filter failed", exc_info=True)
+        return False, 0
 
 TICK_MS = 33
 TOPMOST_REASSERT_MS = 3000
@@ -71,6 +100,7 @@ Press play to hear this out loud.
 
 class ReaderApp(QObject):
     engine_loaded = Signal(bool, str)
+    load_progress = Signal(str)
 
     def __init__(self, app: QApplication, cfg: configmod.Config | None = None) -> None:
         super().__init__()
@@ -87,9 +117,11 @@ class ReaderApp(QObject):
             prefer_offline=bool(self.cfg.get("engine", "prefer_offline")),
         )
         self.splitter = SentenceSplitter(
+            tiny_merge_chars=int(self.cfg.get("reading", "tiny_merge_chars")),
             trailing_pause_s=float(self.cfg.get("audio", "trailing_pause_s")),
             paragraph_pause_s=float(self.cfg.get("audio", "paragraph_pause_s")),
             max_sentences=int(self.cfg.get("ui", "max_sentences")),
+            max_block_words=int(self.cfg.get("reading", "max_block_words")),
         )
         self.ctl = ReaderController(
             self.engine,
@@ -128,11 +160,18 @@ class ReaderApp(QObject):
         # Session-scoped: the settings checkbox stays the persistent master
         # switch, this is just "quiet for a moment".
         self._noise_paused = False
+        # Distinct tick failures already logged, so a fault in the 33ms timer
+        # is recorded once instead of a thousand times a minute.
+        self._tick_errors: set[str] = set()
 
         self.watcher = self._make_watcher()
 
         self.hotkey = StopHotkey(self._on_panic_stop)
         self.app.installNativeEventFilter(self.hotkey)
+
+        # Must be kept alive: installNativeEventFilter does not take ownership.
+        self._show_filter = _ShowPanelFilter(self._on_show_panel)
+        self.app.installNativeEventFilter(self._show_filter)
 
         self._wire()
         self._register_own_windows()
@@ -180,6 +219,7 @@ class ReaderApp(QObject):
         self.tray.read_clipboard.connect(self._on_read_clipboard)
         self.tray.show_panel.connect(self._on_show_panel)
         self.tray.stop_reading.connect(self._on_stop)
+        self.tray.restart_requested.connect(self._on_restart)
         self.tray.quit_requested.connect(self.quit)
         self.tray.open_settings.connect(self._on_open_settings)
         self.tray.open_settings_folder.connect(self._on_open_settings_folder)
@@ -192,6 +232,7 @@ class ReaderApp(QObject):
         self._connect_watcher()
 
         self.engine_loaded.connect(self._on_engine_loaded)
+        self.load_progress.connect(self._on_load_progress)
 
     def _connect_watcher(self) -> None:
         """Signals from the watcher thread. A restarted watcher is a new
@@ -213,37 +254,71 @@ class ReaderApp(QObject):
     # ------------------------------------------------------------- startup
 
     def _load_engine(self) -> None:
-        """Runs on a worker thread; the signal marshals back to the GUI thread."""
+        """Runs on a worker thread; the signals marshal back to the GUI thread."""
         try:
+            t0 = time.perf_counter()
+            self.load_progress.emit("loading model…")
             self.engine.load()
+            t_model = time.perf_counter()
+            self.load_progress.emit("preparing text engine…")
             self.splitter.warm()
+            t_split = time.perf_counter()
             if self.cfg.get("engine", "warm_on_start"):
+                self.load_progress.emit("warming up the voice…")
                 self.engine.warm()
+            t_warm = time.perf_counter()
             self.ctl.start()
-            # Pull down the starter voices the same way the model and af_heart
-            # arrive. Best-effort and after warm-up, so it never delays the
-            # first read and offline simply means fewer voices.
-            if self.cfg.get("engine", "fetch_default_voices"):
-                try:
-                    self.engine.ensure_default_voices()
-                except Exception:
-                    log.debug("could not fetch the starter voices", exc_info=True)
+            log.info(
+                "engine ready in %.1fs (model %.1fs, text %.1fs, warm-up %.1fs)",
+                t_warm - t0, t_model - t0, t_split - t_model, t_warm - t_split,
+            )
             warning = (
                 ""
                 if self.engine.espeak_fallback_ok
                 else "espeak fallback missing: some words will be skipped"
             )
             self.engine_loaded.emit(True, warning)
+            # Pull down the starter voices the same way the model and af_heart
+            # arrive. Deliberately after the ready signal: this can touch the
+            # network, and it must never gate the first read -- offline simply
+            # means fewer voices.
+            if self.cfg.get("engine", "fetch_default_voices"):
+                try:
+                    self.engine.ensure_default_voices()
+                except Exception:
+                    log.debug("could not fetch the starter voices", exc_info=True)
         except Exception as exc:
             log.exception("engine failed to load")
             self.engine_loaded.emit(False, str(exc))
+
+    def _on_load_progress(self, phase: str) -> None:
+        """Startup phases, marshalled from the engine-load thread."""
+        if self._ready:
+            return
+        self.tray.set_state("loading", f"{APP_NAME} — {phase}")
+        self.panel.set_status(phase)
 
     def _on_engine_loaded(self, ok: bool, message: str) -> None:
         self._ready = ok
         if not ok:
             self.tray.set_state("error", f"{APP_NAME} — failed to load: {message}")
-            self.panel.set_status("engine failed to load")
+            self.panel.set_status(
+                "engine failed to load — try Restart from the tray menu"
+            )
+            # The queued text can never be read by this process; keeping it
+            # stashed would just silently swallow the user's request.
+            self._pending_text = None
             return
+
+        if bool(self.cfg.get("audio", "keep_audio_alive")):
+            # Open the device now rather than inside the first UI tick, so a
+            # device failure surfaces here as a log line instead of poisoning
+            # the autoplay path. (_apply_settings ran before _ready was set,
+            # so its early-open branch was skipped at startup.)
+            try:
+                self.ctl.player.ensure_ready()
+            except Exception:
+                log.warning("could not open the audio device early", exc_info=True)
 
         # Only now install the hook: the load window is the one time this
         # process predictably starves the GIL, and Windows drops slow hooks.
@@ -507,12 +582,17 @@ class ReaderApp(QObject):
         self.splitter.trailing_pause_s = float(cfg.get("audio", "trailing_pause_s"))
         self.splitter.paragraph_pause_s = float(cfg.get("audio", "paragraph_pause_s"))
         self.splitter.max_sentences = int(cfg.get("ui", "max_sentences"))
+        # Takes effect on the next read; the loaded document keeps its split.
+        self.splitter.max_block_words = int(cfg.get("reading", "max_block_words"))
+        self.splitter.tiny_merge_chars = int(cfg.get("reading", "tiny_merge_chars"))
 
         self.panel.set_typography(
             int(cfg.get("ui", "panel_font_pt")),
             float(cfg.get("ui", "panel_line_spacing")),
             str(cfg.get("ui", "panel_font_family") or ""),
         )
+        self.panel.set_rsvp_enabled(bool(cfg.get("ui", "rsvp_enabled")))
+        self.ctl.rsvp_extra_delay_s = int(cfg.get("ui", "rsvp_delay_ms")) / 1000.0
         self.panel.set_colors(
             str(cfg.get("colors", "highlight")),
             str(cfg.get("colors", "page_tint")),
@@ -568,13 +648,27 @@ class ReaderApp(QObject):
         # is stopped, the panel must still track next/back and show state.
         if not self._has_document:
             return
-        state = self.ctl.tick()
+        try:
+            state = self.ctl.tick()
+        except Exception as exc:
+            # Without this, a fault here re-raises into the Qt timer slot every
+            # 33ms and goes to a stderr that points nowhere -- the app then
+            # looks frozen with no trace of why. Log each distinct fault once.
+            key = f"{type(exc).__name__}: {exc}"
+            if key not in self._tick_errors:
+                self._tick_errors.add(key)
+                log.exception("tick failed")
+                self.panel.set_status("error — see log")
+            return
         if state.sentence_changed:
             self.panel.set_sentence(state.sentence_index)
         self.panel.set_playing(state.playing)
+        self.panel.set_current_word(state.word_text, state.playing)
 
         total = state.total_sentences
-        if state.finished:
+        if state.audio_error:
+            status = "audio device error — check the output device, or Restart"
+        elif state.finished:
             status = f"finished — {total} sentences  ·  press play to replay"
         else:
             shown = min(state.sentence_index + 1, total)
@@ -593,6 +687,49 @@ class ReaderApp(QObject):
             winwin.raise_topmost(self.panel)
 
     # ---------------------------------------------------------------- exit
+
+    def _on_restart(self) -> None:
+        """Full process restart: the recovery of last resort when the audio
+        stack or the engine has wedged.
+
+        The spawn must come after ``singleton.release()``, or the replacement
+        sees a duplicate instance and exits 0 immediately. A hung Qt event loop
+        can't run this at all -- the guards in ``_tick`` exist so it never
+        comes to that.
+        """
+        log.info("restart requested")
+        script = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "run_reader.pyw",
+        )
+        try:
+            self._timer.stop()
+            self._topmost.stop()
+            self.hotkey.unregister()
+            if self.watcher.isRunning():
+                self.watcher.stop()
+            self.ctl.shutdown()
+        except Exception:
+            log.exception("shutdown before restart failed; restarting anyway")
+        finally:
+            self.pill.hide()
+            self.tray.hide()
+            singleton.release()
+            try:
+                flags = (
+                    subprocess.DETACHED_PROCESS
+                    | subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+                subprocess.Popen(
+                    [sys.executable, script],
+                    cwd=os.path.dirname(script),
+                    creationflags=flags,
+                    close_fds=True,
+                )
+                log.info("replacement process spawned")
+            except Exception:
+                log.exception("failed to spawn the replacement process")
+            self.app.quit()
 
     def quit(self) -> None:
         try:
@@ -625,6 +762,7 @@ def main(argv=None) -> int:
 
     cfg = configmod.load()
     logmod.setup(str(cfg.get("app", "log_level")), to_console=sys.stderr is not None)
+    logmod.install_excepthooks()
     log.info("starting %s (settings: %s)", APP_NAME, paths.settings_file())
 
     # Both of these must happen before QApplication is constructed. PassThrough

@@ -246,5 +246,48 @@ def test_callback_never_raises():
     assert p.callback_error is not None
 
 
+def test_word_timings_ride_along_with_chunks():
+    """The player stores word timings opaquely, per unit, cleared with the
+    playlist -- the UI's word display reads them back by index."""
+    p = StreamPlayer(SR, blocksize=FRAMES)
+    p.set_playlist(2)
+    words = [("stand-in", 0.0)]  # opaque to the player
+    p.set_chunk(0, np.zeros(100, dtype=np.float32), words)
+    p.set_chunk(1, np.zeros(100, dtype=np.float32))  # words optional
+    assert p.get_words(0) is words
+    assert p.get_words(1) is None
+    assert p.get_words(99) is None
+    p.set_playlist(1)
+    assert p.get_words(0) is None, "a new playlist clears old timings"
+
+
+def test_playlist_shrink_mid_callback_degrades_gracefully():
+    """set_playlist runs while the callback may still be live (stop() is
+    asynchronous); a shrink must never index the old size into the new list."""
+    p = make_player()
+    pull(p)
+    p.set_playlist(1)  # shrink from 3 while 'playing'
+    p._pending = "resume"
+    pull(p)
+    assert p.callback_error is None
+
+
+def test_play_request_stale_rearms_once_per_interval():
+    p = make_player()
+    p._ensure_stream = lambda: None
+    p._paused = True
+    p._pending = "resume"
+    p._pending_since = 0.0  # long ago
+    assert p.play_request_stale(1.0)
+    assert not p.play_request_stale(1.0), "re-armed: no immediate second hit"
+
+
+def test_consumed_play_request_is_not_stale():
+    p = make_player()
+    pull(p)  # consumes the pending resume
+    p._pending_since = 0.0
+    assert not p.play_request_stale(1.0)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

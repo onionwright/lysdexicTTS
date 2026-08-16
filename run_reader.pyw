@@ -35,23 +35,41 @@ def _startup_log() -> str:
     return os.path.join(root, "KokoroReader", "logs", "startup.log")
 
 
-def _note(message: str) -> None:
-    """Append one line. Silent on failure -- a broken log must not stop a launch."""
+def _fallback_log() -> str:
+    return os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "startup-fallback.log"
+    )
+
+
+def _append(path: str, message: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # One line per launch, so this grows very slowly; truncate rather than
+    # rotate to keep the whole thing dependency-free.
     try:
-        path = _startup_log()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        # One line per launch, so this grows very slowly; truncate rather than
-        # rotate to keep the whole thing dependency-free.
-        try:
-            if os.path.getsize(path) > _MAX_BYTES:
-                os.remove(path)
-        except OSError:
-            pass
-        stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write("%s %s\n" % (stamp, message))
-    except Exception:
+        if os.path.getsize(path) > _MAX_BYTES:
+            os.remove(path)
+    except OSError:
         pass
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write("%s %s\n" % (stamp, message))
+
+
+def _note(message: str) -> None:
+    """Append one line; if the normal location fails, fall back to a file next
+    to this script. A launch that leaves no trace anywhere once made a whole
+    session undiagnosable, so silence is only acceptable when both fail."""
+    try:
+        _append(_startup_log(), message)
+    except Exception:
+        try:
+            _append(
+                _fallback_log(),
+                "%s\n  (normal startup.log unwritable: %s)"
+                % (message, traceback.format_exc().strip().splitlines()[-1]),
+            )
+        except Exception:
+            pass
 
 
 # Written before anything else can fail, so a missing line here means the

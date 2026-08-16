@@ -473,6 +473,27 @@ class SettingsWindow(QWidget):
         )
 
     def _page_reading(self, column: QVBoxLayout) -> None:
+        self.block_words = self._slider(
+            column, "Highlight block size",
+            "Longer sentences are broken into blocks of about this many "
+            "words, so each block is easy to follow and to click back to.",
+            "reading", "max_block_words", 4, 15, 1, lambda v: f"{int(v)} words",
+        )
+        self.rsvp_check = self._check(
+            column, "Show each word as it is spoken",
+            "A strip above the text shows the exact word being said, in step "
+            "with the voice, so your eye never has to find its place. The "
+            "highlight below stays on.",
+            "ui", "rsvp_enabled",
+        )
+        self.rsvp_delay = self._slider(
+            column, "Word display delay",
+            "If the flashed word runs ahead of the voice, raise this until "
+            "they land together. Wireless headphones and hearing aids add a "
+            "delay the app cannot measure by itself.",
+            "ui", "rsvp_delay_ms", 0, 600, 20, lambda v: f"{int(v)} ms",
+        )
+        self._divider(column)
         self.sentence_pause = self._slider(
             column, "Pause between sentences",
             "A longer pause gives you more time to take each sentence in.",
@@ -822,6 +843,8 @@ class SettingsWindow(QWidget):
             for slider, section, key in (
                 (self.speed_slider, "engine", "speed"),
                 (self.volume_slider, "audio", "volume"),
+                (self.block_words, "reading", "max_block_words"),
+                (self.rsvp_delay, "ui", "rsvp_delay_ms"),
                 (self.sentence_pause, "audio", "trailing_pause_s"),
                 (self.paragraph_pause, "audio", "paragraph_pause_s"),
                 (self.restart_threshold, "playback", "prev_restart_threshold_s"),
@@ -860,6 +883,9 @@ class SettingsWindow(QWidget):
             self.hotkey_check.setChecked(
                 bool(self.cfg.get("app", "stop_hotkey_enabled"))
             )
+            self.rsvp_check.setChecked(
+                bool(self.cfg.get("ui", "rsvp_enabled"))
+            )
 
             for check, key in (
                 (self.above_check, "above"),
@@ -886,7 +912,8 @@ class SettingsWindow(QWidget):
             return
         if key in ("panel_font_pt", "lookahead_sentences", "torch_threads",
                    "auto_hide_ms", "offset_x", "offset_y",
-                   "pointer_distance_px", "font_pt"):
+                   "pointer_distance_px", "font_pt", "max_block_words",
+                   "rsvp_delay_ms"):
             value = int(round(float(value)))
         self.cfg.set(section, key, value)
         self._update_preview()

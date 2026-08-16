@@ -277,7 +277,7 @@ class SynthScheduler:
         # Publish only if still current; a stale result stays in the cache.
         if req.gen != self._gen:
             return
-        self.player.set_chunk(req.index, chunk.pcm)
+        self.player.set_chunk(req.index, chunk.pcm, chunk.words)
         if req.index == 0 and self.on_first_chunk is not None:
             self.on_first_chunk(req.gen)
         if self.on_chunk_ready is not None:
@@ -285,7 +285,8 @@ class SynthScheduler:
 
 
 def _chunk_seconds(player: StreamPlayer, index: int) -> float:
-    buf = player._playlist[index] if 0 <= index < player._n else None
+    playlist = player._playlist  # local ref: set_playlist swaps it under us
+    buf = playlist[index] if 0 <= index < len(playlist) else None
     return 0.0 if buf is None else len(buf) / float(player.sample_rate)
 
 

@@ -39,7 +39,12 @@ _MIN_UNIT_CHARS = 32
 
 SUBCHUNK_PAUSE_S = 0.08
 
-_CLAUSE_BREAK_RE = re.compile(r"[,;:—–]\s+")
+# Shared with the splitter's block cap: both cut at the same punctuation so a
+# cut reads as a clause break, which kokoro renders with continuation
+# intonation rather than a full stop.
+CLAUSE_CHARS = ",;:—–"
+CLAUSE_BREAK_RE = re.compile(r"[%s]\s+" % CLAUSE_CHARS)
+_CLAUSE_BREAK_RE = CLAUSE_BREAK_RE  # old private name, kept for callers
 _WORD_BREAK_RE = re.compile(r"\s+")
 
 

@@ -29,6 +29,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+import time
 from typing import Callable, List, Optional
 
 import numpy as np
@@ -161,6 +162,9 @@ class StreamPlayer:
         # --- playlist (written by the scheduler thread, read by the callback)
         self._playlist: List[Optional[np.ndarray]] = []
         self._n = 0
+        # Per-unit word timings, published alongside the pcm for the UI's
+        # word-level display. Never touched by the audio callback.
+        self._words: List[Optional[list]] = []
 
         # --- published state (callback writes, control threads read)
         self.cur_index = 0
@@ -180,6 +184,7 @@ class StreamPlayer:
         self._paused = True
         self._pending: Optional[str] = None
         self._pending_target = 0
+        self._pending_since = 0.0
         self._volume = 1.0
         self._was_starved = False
 
@@ -194,10 +199,14 @@ class StreamPlayer:
     def set_playlist(self, size: int) -> None:
         """Reset to an empty playlist of ``size`` sentences.
 
-        Must be called with playback stopped; the callback reads ``_playlist``
-        without synchronization.
+        The caller's stop() is asynchronous, so the callback can still be
+        running while this executes. Zeroing ``_n`` first closes the window in
+        which a control thread could pair the old size with the new (possibly
+        shorter) list; the callback itself sizes off the list it snapshots.
         """
+        self._n = 0
         self._playlist = [None] * size
+        self._words = [None] * size
         self._n = size
         self.cur_index = 0
         self.pos = 0
@@ -208,14 +217,24 @@ class StreamPlayer:
         self.starved_frames = 0
         self.starve_events = 0
 
-    def set_chunk(self, index: int, pcm: np.ndarray) -> None:
+    def set_chunk(
+        self, index: int, pcm: np.ndarray, words: Optional[list] = None
+    ) -> None:
         """Publish synthesized audio for one sentence. Safe from any thread --
-        list item assignment is atomic under the GIL."""
+        list item assignment is atomic under the GIL. Words go in first, so any
+        thread that sees the chunk also sees its timings."""
         if 0 <= index < self._n:
+            self._words[index] = words
             self._playlist[index] = pcm
 
     def has_chunk(self, index: int) -> bool:
-        return 0 <= index < self._n and self._playlist[index] is not None
+        playlist = self._playlist
+        return 0 <= index < len(playlist) and playlist[index] is not None
+
+    def get_words(self, index: int) -> Optional[list]:
+        """Word timings for one unit, or None if not (yet) published."""
+        words = self._words
+        return words[index] if 0 <= index < len(words) else None
 
     # ------------------------------------------------------------- transport
 
@@ -225,8 +244,27 @@ class StreamPlayer:
         self._ensure_stream()
         if self.finished or self.cur_index >= self._n:
             self._pending = "restart"
+            self._pending_since = time.monotonic()
         elif self._paused:
             self._pending = "resume"
+            self._pending_since = time.monotonic()
+
+    def play_request_stale(self, age_s: float) -> bool:
+        """True when a play/resume request has sat unconsumed for ``age_s``.
+
+        A stream can open, report itself active, and still never invoke the
+        callback (a wedged WASAPI endpoint does exactly this). The device-alive
+        check cannot see that state, but the unconsumed intent can. Re-arms its
+        own timer, so a caller acting on True retries at most once per
+        ``age_s``.
+        """
+        if self._pending not in ("resume", "restart") or not self._paused:
+            return False
+        now = time.monotonic()
+        if now - self._pending_since < age_s:
+            return False
+        self._pending_since = now
+        return True
 
     def ensure_ready(self) -> None:
         """Open the device if it isn't already.
@@ -333,6 +371,23 @@ class StreamPlayer:
     def position_seconds(self) -> float:
         return self.pos / float(self.sample_rate)
 
+    def output_latency_s(self) -> float:
+        """PortAudio's estimate of write-to-speaker delay for the open stream.
+
+        ``pos`` counts frames *written* to the device, which runs ahead of what
+        is audible by the buffering ("high" latency here). Anything displayed
+        against the playhead has to subtract this or it leads the voice.
+        Bluetooth sinks add further delay PortAudio cannot see; that part is
+        the user-facing display-delay setting's job.
+        """
+        stream = self._stream
+        if stream is None:
+            return 0.0
+        try:
+            return float(stream.latency or 0.0)
+        except Exception:
+            return 0.0
+
     # ---------------------------------------------------------------- device
 
     def _ensure_stream(self) -> None:
@@ -438,10 +493,10 @@ class StreamPlayer:
             self.boundary_seq += 1
         elif action == "jump":
             target = self._pending_target
-            if target >= self._n:
+            if target >= len(self._playlist):
                 self._paused = True
                 self.finished = True
-                self.cur_index = self._n
+                self.cur_index = len(self._playlist)
             else:
                 self.cur_index = target
                 self.finished = False
@@ -453,13 +508,16 @@ class StreamPlayer:
         if self._paused:
             return 0
         written = 0
+        # Local snapshot: set_playlist swaps the list under us; sizing off the
+        # snapshot keeps index and length consistent within this callback.
+        playlist = self._playlist
         while written < count:
             idx = self.cur_index
-            if idx >= self._n:
+            if idx >= len(playlist):
                 self.finished = True
                 self._paused = True
                 return written
-            buf = self._playlist[idx]
+            buf = playlist[idx]
             if buf is None:
                 # Not synthesized yet: hold position and let the caller pad
                 # with silence. Never stop the device for this.
