@@ -12,9 +12,10 @@ highlighted, and transport controls stay visible the whole time.
 No copying into a separate window. No right-click menu to hunt for.
 
 That focus shapes the whole interface: adjustable text size and line spacing
-in the reading window, a sentence highlight that tracks the voice so you never
-lose your place, and settings written as plain sentences with ordinary
-controls rather than configuration syntax.
+in the reading window, a highlight that tracks the voice in evenly sized
+blocks so you never lose your place, an optional strip that flashes each word
+at the moment it is spoken, and settings written as plain sentences with
+ordinary controls rather than configuration syntax.
 
 ---
 
@@ -97,9 +98,14 @@ It runs in the **system tray**. Windows 11 files new tray icons into the hidden
 `^` overflow flyout, so on first run the app also shows a notification and opens
 the reader panel — drag the icon out of the flyout to pin it next to the clock.
 
-If it ever seems not to start, run **`LysdexicTTS-debug.cmd`**, which is the same
-thing with a console window, and check
-`%LOCALAPPDATA%\KokoroReader\logs\reader.log`.
+If it ever misbehaves while running, tray → **Restart** relaunches it cleanly.
+If it seems not to start at all, run **`LysdexicTTS-debug.cmd`**, which is the
+same thing with a console window, and check
+`%LOCALAPPDATA%\KokoroReader\logs\reader.log` — startup logs how long each
+loading phase took, and the tray tooltip names the phase while it runs. If the
+log directory itself cannot be written, the breadcrumb lands in
+`startup-fallback.log` next to the app instead; a session is never allowed to
+go completely dark.
 
 Try the engine from the command line without any UI:
 
@@ -145,13 +151,31 @@ control, so it was removed rather than left to lie.
 | Jump | Click any sentence in the panel |
 | Panic stop | `Ctrl+Alt+Esc`, registered only while audio is playing |
 | Background sound | Button beside the gear, when keep-alive is on — silences it without stopping the reading |
-| Tray | Read clipboard, show panel, edit settings, quit |
+| Tray | Read clipboard, show panel, edit settings, restart, quit |
 
 Settings live under tray → *Settings…* — a plain visual window with real
 controls, grouped as Voice, Reading, Selecting text, Read button, Text size,
 Colours, Starting up and Advanced. Every option has a short plain-language
 description; nothing requires reading configuration syntax. Changes apply and
 save as you make them.
+
+**Highlight blocks are kept evenly sized** (Reading page). Long sentences are
+split into blocks of about ten words — adjustable from 4 to 15 — cut at commas
+and other clause breaks so the pieces still sound natural. Before this, one
+highlight could be three words and the next could be two whole sentences,
+which made following the moving block harder and clicking back to a particular
+phrase imprecise. Every block is a real playback unit, so every block is a
+valid place to jump to.
+
+**Show each word as it is spoken** (Reading page) adds a strip above the text
+that flashes the word being said, exactly when it is said. The idea comes from
+RSVP reading research: when the word appears in one fixed spot at the moment
+you hear it, your eyes never spend time locating it in the paragraph. The
+strip is timed against what is coming out of the speaker, not what has been
+queued — the device buffer alone would put it a couple of words ahead.
+Wireless headphones and hearing aids add a further delay Windows cannot
+report, so there is a *Word display delay* slider to line the strip up with
+what you hear; a Bluetooth headset usually wants 100–300 ms, set once.
 
 **The Read button** (Read button page) has its own page because where a floating
 button appears and when it goes away are the sort of thing that is either
@@ -268,7 +292,7 @@ every design decision:
 | Fixed overhead per synthesis call | **~0.4 s** regardless of length | Don't over-split; a 3-word sentence costs nearly as much as a 30-word one |
 | Silence padding per chunk | **0.31–0.38 s** leading, **0.49 s** trailing | Naive concatenation leaves ~0.85 s of dead air between *every* sentence |
 | Waveform edge samples | **exactly ±0.0** | Concatenation is inherently click-free; no crossfade needed |
-| Cold start | **~7 s** | The app must stay resident with the model warm |
+| Cold start | **~9 s** (more on the first launch after a reboot, while the 327 MB model comes off disk under antivirus scanning) | The app must stay resident with the model warm; each loading phase is timed in the log |
 
 ### Results
 
@@ -293,13 +317,16 @@ raw text
    ├─ text/normalize.py   PDF de-wrap & de-hyphenation, bullets, headings,
    │                      NBSP/zero-width cleanup — one pass, keeping an
    │                      offset map back to the original string
-   ├─ text/splitter.py    spaCy tok2vec+senter → sentences, tiny-fragment merge
+   ├─ text/splitter.py    spaCy tok2vec+senter → sentences, tiny-fragment
+   │                      merge, balanced ~10-word block cap at clause breaks
    ├─ text/units.py       sentences → playback units (long sentences cut at
    │                      clause boundaries *only while the buffer is cold*)
    ├─ core/scheduler.py   synthesis thread, bounded lookahead, cancellation
    │   └─ tts/kokoro_engine.py → tts/postproc.py (trim silence, shape pauses)
    │        └─ core/cache.py    text-keyed LRU, bounded by total seconds
-   └─ audio/player.py     sounddevice OutputStream callback + transport
+   └─ audio/player.py     sounddevice OutputStream callback + transport;
+                          per-word timestamps ride along with each chunk and
+                          drive the word strip, latency-compensated
 
 win/  hook · selection · uia · clipboard · keys · capture · window · dpi
       hotkey · singleton
@@ -368,6 +395,13 @@ and fade-in all complete inside one callback.
 - **Previous** restarts the current sentence if you're more than 2 s in — the
   rule every music player uses, because reaching for "back" usually means "say
   that again".
+- **A failed playback start is retried, then said out loud.** Opening the
+  device can fail transiently — a Bluetooth endpoint mid-handoff, typically.
+  Autoplay retries for a few seconds and then puts *audio device error* in the
+  status bar; a play request that a started stream never consumes is treated
+  as a wedged endpoint and the stream is reopened. The one unacceptable
+  outcome, and a real bug once: a silent, permanent "paused" with nothing in
+  any log.
 
 ### Cancellation
 
@@ -428,9 +462,10 @@ feels instant.
 - [x] **Phase 4** — TOML settings, single instance, logging,
       per-monitor DPI, device-loss recovery, default-device following,
       panic hotkey
-
-Not built yet: word-level highlighting — the per-word timings are already
-computed and kept on every chunk, so it is mostly UI work.
+- [x] **Phase 5** — evenly sized highlight blocks, the word-by-word strip
+      (driven by kokoro's per-word timestamps, compensated to the *audible*
+      position), tray Restart, timed startup phases, and playback that
+      surfaces device errors instead of silently pausing
 
 Kokoro-82M is Apache-2.0 licensed. The model and its voice packs are downloaded
 from [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) at runtime
